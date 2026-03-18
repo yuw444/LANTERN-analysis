@@ -3,151 +3,6 @@
 #' Convenience functions for common ancestry-specific analysis workflows.
 
 # ============================================================================
-# Internal helper functions
-# ============================================================================
-
-#' Find sample overlap between GT and PT matrices
-#'
-#' @param gt_matrix Genotype matrix (cols = samples)
-#' @param pt_matrix PT matrix (rows = samples)
-#' @return List with common_samples, dropped_from_gt, dropped_from_pt
-find_sample_overlap <- function(gt_matrix, pt_matrix) {
-  gt_samples <- colnames(gt_matrix)
-  pt_samples <- rownames(pt_matrix)
-
-  # If no names, assume same order
-  if (is.null(gt_samples) || is.null(pt_samples)) {
-    n_gt <- ncol(gt_matrix)
-    n_pt <- nrow(pt_matrix)
-    if (n_gt != n_pt) {
-      min_n <- min(n_gt, n_pt)
-      warning("Matrices have different dimensions (GT: ", n_gt, " cols, PT: ", n_pt,
-              " rows). Using first ", min_n, " samples.")
-      gt_samples <- paste0("sample_", 1:min_n)
-      pt_samples <- paste0("sample_", 1:min_n)
-      colnames(gt_matrix) <- gt_samples
-      rownames(pt_matrix) <- pt_samples
-    } else {
-      gt_samples <- paste0("sample_", 1:ncol(gt_matrix))
-      pt_samples <- paste0("sample_", 1:nrow(pt_matrix))
-      colnames(gt_matrix) <- gt_samples
-      rownames(pt_matrix) <- pt_samples
-    }
-  }
-
-  common <- intersect(gt_samples, pt_samples)
-
-  if (length(common) == 0) {
-    stop("No common samples found between GT and PT matrices")
-  }
-
-  list(
-    gt_matrix = gt_matrix[, common, drop = FALSE],
-    pt_matrix = pt_matrix[common, , drop = FALSE],
-    common_samples = common,
-    n_common = length(common),
-    dropped_from_gt = setdiff(gt_samples, common),
-    dropped_from_pt = setdiff(pt_samples, common)
-  )
-}
-
-#' Find variant/region overlap between GT and PT matrices
-#'
-#' @param gt_matrix Genotype matrix (rows = variants, cols = samples)
-#' @param pt_matrix PT matrix (rows = samples, cols = regions)
-#' @param vcf_path Optional VCF path for coordinate-based matching
-#' @return List with aligned matrices and overlap info
-find_variant_overlap <- function(gt_matrix, pt_matrix, vcf_path = NULL) {
-  gt_variants <- rownames(gt_matrix)
-  pt_regions <- colnames(pt_matrix)
-
-  # If no names, assume same order
-  if (is.null(gt_variants) || is.null(pt_regions)) {
-    n_gt <- nrow(gt_matrix)
-    n_pt <- ncol(pt_matrix)
-    if (n_gt != n_pt) {
-      min_n <- min(n_gt, n_pt)
-      warning("Matrices have different dimensions (GT: ", n_gt, " rows, PT: ",
-              n_pt, " cols). Using first ", min_n, " variants.")
-      gt_variants <- paste0("var_", 1:min_n)
-      pt_regions <- paste0("region_", 1:min_n)
-      rownames(gt_matrix) <- gt_variants
-      colnames(pt_matrix) <- pt_regions
-    } else {
-      gt_variants <- paste0("var_", 1:nrow(gt_matrix))
-      pt_regions <- paste0("region_", 1:ncol(pt_matrix))
-      rownames(gt_matrix) <- gt_variants
-      colnames(pt_matrix) <- pt_regions
-    }
-  }
-
-  # Try exact matching first
-  common <- intersect(gt_variants, pt_regions)
-
-  # If no exact match, try coordinate overlap
-  if (length(common) == 0) {
-    message("No exact variant/region name matches. Attempting coordinate-based matching...")
-
-    # Try to parse coordinates
-    # GT format: "chr:pos" (e.g., "22:123456")
-    # PT format: "chr:start-end" (e.g., "22:100000-200000")
-
-    matched_gt <- character()
-    matched_pt <- character()
-
-    for (i in seq_along(gt_variants)) {
-      gt_name <- gt_variants[i]
-      parts <- strsplit(gt_name, ":")[[1]]
-      if (length(parts) >= 2) {
-        gt_chr <- parts[1]
-        gt_pos <- as.numeric(parts[2])
-
-        for (j in seq_along(pt_regions)) {
-          pt_name <- pt_regions[j]
-          pt_parts <- strsplit(pt_name, ":")[[1]]
-          pt_chr <- pt_parts[1]
-          coords <- strsplit(pt_parts[2], "-")[[1]]
-          pt_start <- as.numeric(coords[1])
-          pt_end <- as.numeric(coords[2])
-
-          if (!is.na(gt_pos) && !is.na(pt_start) && !is.na(pt_end)) {
-            if (gt_chr == pt_chr && gt_pos >= pt_start && gt_pos <= pt_end) {
-              matched_gt <- c(matched_gt, gt_variants[i])
-              matched_pt <- c(matched_pt, pt_regions[j])
-              break  # Take first matching region
-            }
-          }
-        }
-      }
-    }
-
-    if (length(matched_gt) > 0) {
-      # Create unique mapping
-      common <- unique(c(matched_gt, matched_pt))
-      message("Found ", length(matched_gt), " variants within ", length(unique(matched_pt)), " regions.")
-    }
-  }
-
-  if (length(common) == 0) {
-    # Fall back to positional matching by order
-    warning("No variant/region name or coordinate overlap. Matching by order.")
-    min_n <- min(nrow(gt_matrix), ncol(pt_matrix))
-    rownames(gt_matrix) <- paste0("var_", 1:nrow(gt_matrix))
-    colnames(pt_matrix) <- paste0("region_", 1:ncol(pt_matrix))
-    common <- paste0("shared_", 1:min_n)
-  }
-
-  list(
-    gt_matrix = gt_matrix[intersect(rownames(gt_matrix), common), , drop = FALSE],
-    pt_matrix = pt_matrix[, intersect(colnames(pt_matrix), common), drop = FALSE],
-    common_variants = common,
-    n_common = length(common),
-    dropped_from_gt = setdiff(rownames(gt_matrix), common),
-    dropped_from_pt = setdiff(colnames(pt_matrix), common)
-  )
-}
-
-# ============================================================================
 # Main pipeline function
 # ============================================================================
 
@@ -155,6 +10,7 @@ find_variant_overlap <- function(gt_matrix, pt_matrix, vcf_path = NULL) {
 #'
 #' Complete pipeline: split genotype matrix by ancestry, return dosage matrices.
 #' Handles sample and variant mismatches by using only overlapping data.
+#' Memory efficient: single-pass subsetting using index vectors.
 #'
 #' @param gt_matrix Integer matrix of genotypes (rows=variants, cols=samples)
 #'   Values: 0=homozygous ref, 1=heterozygous, 2=homozygous alt
@@ -174,14 +30,6 @@ find_variant_overlap <- function(gt_matrix, pt_matrix, vcf_path = NULL) {
 #'   \item{european}{European ancestry-specific dosage matrix}
 #'   \item{counts}{List of ancestry counts per region}
 #'   \item{overlap}{Overlap information}
-#'     \itemize{
-#'       \item{n_samples_total}{Total samples before filtering}
-#'       \item{n_samples_kept}{Samples after overlap filtering}
-#'       \item{n_variants_total}{Total variants before filtering}
-#'       \item{n_variants_kept}{Variants after overlap filtering}
-#'       \item{dropped_samples}{Samples removed due to mismatch}
-#'       \item{dropped_variants}{Variants removed due to mismatch}
-#'     }
 #'
 #' @examples
 #' # Example with mismatched dimensions
@@ -211,71 +59,230 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
   n_pt_samples_orig <- nrow(pt_matrix)
   n_pt_regions_orig <- ncol(pt_matrix)
 
-  # Step 1: Find sample overlap
+  # ========================================================================
+  # Step 1: Find sample overlap (memory efficient - use indices, not copies)
+  # ========================================================================
   if (verbose) message("Step 1: Finding sample overlap...")
 
-  overlap <- find_sample_overlap(gt_matrix, pt_matrix)
-  gt_matrix <- overlap$gt_matrix
-  pt_matrix <- overlap$pt_matrix
+  gt_sample_names <- colnames(gt_matrix)
+  pt_sample_names <- rownames(pt_matrix)
+
+  # Handle unnamed matrices
+  if (is.null(gt_sample_names) || is.null(pt_sample_names)) {
+    n_gt <- ncol(gt_matrix)
+    n_pt <- nrow(pt_matrix)
+    min_n <- min(n_gt, n_pt)
+    if (n_gt != n_pt) {
+      warning("Matrices have different dimensions (GT: ", n_gt, " cols, PT: ", n_pt,
+              " rows). Using first ", min_n, " samples.")
+    }
+    gt_sample_names <- paste0("sample_", 1:min_n)
+    pt_sample_names <- paste0("sample_", 1:min_n)
+    colnames(gt_matrix) <- gt_sample_names
+    rownames(pt_matrix) <- pt_sample_names
+  }
+
+  # Find common samples by name
+  common_samples <- intersect(gt_sample_names, pt_sample_names)
+
+  if (length(common_samples) == 0) {
+    stop("No common samples found between GT and PT matrices")
+  }
+
+  # Calculate indices for subsetting (avoid copying until needed)
+  gt_sample_idx <- match(common_samples, gt_sample_names)
+  pt_sample_idx <- match(common_samples, pt_sample_names)
+
+  n_common_samples <- length(common_samples)
+  dropped_samples <- c(
+    setdiff(gt_sample_names, common_samples),
+    setdiff(pt_sample_names, common_samples)
+  )
 
   if (verbose) {
     message("  Samples: ", n_gt_samples_orig, " in GT, ", n_pt_samples_orig, " in PT")
-    message("  Common samples: ", overlap$n_common)
-    if (length(overlap$dropped_from_gt) > 0) {
-      message("  Dropped from GT: ", paste(head(overlap$dropped_from_gt, 3), collapse = ", "),
-              if (length(overlap$dropped_from_gt) > 3) "..." else "")
-    }
-    if (length(overlap$dropped_from_pt) > 0) {
-      message("  Dropped from PT: ", paste(head(overlap$dropped_from_pt, 3), collapse = ", "),
-              if (length(overlap$dropped_from_pt) > 3) "..." else "")
+    message("  Common samples: ", n_common_samples)
+    if (length(dropped_samples) > 0) {
+      message("  Dropped: ", paste(head(dropped_samples, 3), collapse = ", "),
+              if (length(dropped_samples) > 3) "..." else "")
     }
   }
 
+  # ========================================================================
   # Step 2: Find variant/region overlap
+  # ========================================================================
   if (verbose) message("\nStep 2: Finding variant/region overlap...")
 
-  var_overlap <- find_variant_overlap(gt_matrix, pt_matrix, vcf_path)
-  gt_matrix <- var_overlap$gt_matrix
-  pt_matrix <- var_overlap$pt_matrix
+  gt_var_names <- rownames(gt_matrix)
+  pt_region_names <- colnames(pt_matrix)
+
+  # Handle unnamed matrices
+  if (is.null(gt_var_names) || is.null(pt_region_names)) {
+    n_gt <- nrow(gt_matrix)
+    n_pt <- ncol(pt_matrix)
+    min_n <- min(n_gt, n_pt)
+    if (n_gt != n_pt) {
+      warning("Matrices have different dimensions (GT: ", n_gt, " rows, PT: ",
+              n_pt, " cols). Using first ", min_n, " variants.")
+    }
+    gt_var_names <- paste0("var_", 1:min_n)
+    pt_region_names <- paste0("region_", 1:min_n)
+    rownames(gt_matrix) <- gt_var_names
+    colnames(pt_matrix) <- pt_region_names
+  }
+
+  # Try exact matching first (fast)
+  common_vars <- intersect(gt_var_names, pt_region_names)
+
+  # If no exact match, try coordinate-based matching
+  if (length(common_vars) == 0) {
+    if (verbose) message("  No exact matches. Trying coordinate-based matching...")
+
+    # Pre-parse GT coordinates: chr:pos -> list(chr, pos)
+    parse_gt_coord <- function(name) {
+      parts <- strsplit(name, ":")[[1]]
+      if (length(parts) >= 2) {
+        pos <- suppressWarnings(as.numeric(parts[2]))
+        if (is.na(pos)) pos <- NULL
+        list(chr = parts[1], pos = pos)
+      } else {
+        NULL
+      }
+    }
+
+    # Pre-parse PT coordinates: chr:start-end -> list(chr, start, end)
+    parse_pt_coord <- function(name) {
+      chr_part <- strsplit(name, ":")[[1]]
+      if (length(chr_part) >= 2) {
+        coords <- strsplit(chr_part[2], "-")[[1]]
+        if (length(coords) == 2) {
+          start <- suppressWarnings(as.numeric(coords[1]))
+          end <- suppressWarnings(as.numeric(coords[2]))
+          if (!is.na(start) && !is.na(end)) {
+            return(list(chr = chr_part[1], start = start, end = end))
+          }
+        }
+      }
+      NULL
+    }
+
+    # Parse all coordinates upfront (vectorized approach)
+    gt_coords <- lapply(gt_var_names, parse_gt_coord)
+    pt_coords <- lapply(pt_region_names, parse_pt_coord)
+
+    # Find valid matches using matrix operations where possible
+    matched_gt_idx <- integer()
+    matched_pt_idx <- integer()
+
+    # Build match matrix for O(n*m) scan
+    for (i in seq_along(gt_coords)) {
+      if (is.null(gt_coords[[i]]$pos)) next
+      for (j in seq_along(pt_coords)) {
+        pt <- pt_coords[[j]]
+        if (is.null(pt$start)) next
+        if (gt_coords[[i]]$chr == pt$chr &&
+            gt_coords[[i]]$pos >= pt$start &&
+            gt_coords[[i]]$pos <= pt$end) {
+          matched_gt_idx <- c(matched_gt_idx, i)
+          matched_pt_idx <- c(matched_pt_idx, j)
+          break  # Take first matching region
+        }
+      }
+    }
+
+    # Clean up intermediate objects
+    rm(gt_coords, pt_coords)
+    gc()
+
+    if (length(matched_gt_idx) > 0) {
+      common_vars <- unique(c(gt_var_names[matched_gt_idx], pt_region_names[matched_pt_idx]))
+      if (verbose) {
+        message("  Found ", length(matched_gt_idx), " variants in ",
+                length(unique(matched_pt_idx)), " regions")
+      }
+    } else {
+      # Fallback to positional match by order
+      warning("No variant/region name or coordinate overlap. Matching by order.")
+      min_n <- min(length(gt_var_names), length(pt_region_names))
+      rownames(gt_matrix) <- paste0("var_", seq_len(nrow(gt_matrix)))
+      colnames(pt_matrix) <- paste0("region_", seq_len(ncol(pt_matrix)))
+      common_vars <- paste0("shared_", 1:min_n)
+    }
+  }
+
+  # Calculate indices for variant/region subsetting
+  gt_var_idx <- match(intersect(gt_var_names, common_vars), gt_var_names)
+  pt_region_idx <- match(intersect(pt_region_names, common_vars), pt_region_names)
+
+  n_common_vars <- length(common_vars)
+  dropped_variants <- c(
+    setdiff(gt_var_names, common_vars),
+    setdiff(pt_region_names, common_vars)
+  )
 
   if (verbose) {
     message("  Variants in GT: ", n_gt_variants_orig)
     message("  Regions in PT: ", n_pt_regions_orig)
-    message("  Common variants/regions: ", var_overlap$n_common)
-    if (length(var_overlap$dropped_from_gt) > 0) {
-      message("  Dropped variants: ", paste(head(var_overlap$dropped_from_gt, 3), collapse = ", "),
-              if (length(var_overlap$dropped_from_gt) > 3) "..." else "")
+    message("  Common variants/regions: ", n_common_vars)
+    if (length(dropped_variants) > 0) {
+      message("  Dropped: ", paste(head(dropped_variants, 3), collapse = ", "),
+              if (length(dropped_variants) > 3) "..." else "")
     }
   }
 
-  # Validate dimensions match after overlap
-  if (ncol(gt_matrix) != nrow(pt_matrix)) {
-    stop("After overlap filtering: GT cols (", ncol(gt_matrix),
-         ") != PT rows (", nrow(pt_matrix), ")")
+  # ========================================================================
+  # Step 3: Single-pass subsetting (memory efficient)
+  # ========================================================================
+  if (verbose) message("\nStep 3: Subsetting matrices...")
+
+  # Subset both matrices in single operation using calculated indices
+  # GT: rows = variants we want, cols = samples we want
+  # PT: rows = samples we want, cols = regions we want
+  gt_subset <- gt_matrix[gt_var_idx, gt_sample_idx, drop = FALSE]
+  pt_subset <- pt_matrix[pt_sample_idx, pt_region_idx, drop = FALSE]
+
+  # Clean up intermediates immediately
+  rm(gt_matrix, pt_matrix)
+  gc()
+
+  # ========================================================================
+  # Step 4: Validate dimensions
+  # ========================================================================
+  if (ncol(gt_subset) != nrow(pt_subset)) {
+    stop("After overlap filtering: GT cols (", ncol(gt_subset),
+         ") != PT rows (", nrow(pt_subset), ")")
   }
-  if (nrow(gt_matrix) != ncol(pt_matrix)) {
-    stop("After overlap filtering: GT rows (", nrow(gt_matrix),
-         ") != PT cols (", ncol(pt_matrix), "). ",
+  if (nrow(gt_subset) != ncol(pt_subset)) {
+    stop("After overlap filtering: GT rows (", nrow(gt_subset),
+         ") != PT cols (", ncol(pt_subset), "). ",
          "Each GT variant should match to exactly one PT region.")
   }
 
-  # Step 3: Split genotypes by ancestry
-  if (verbose) message("\nStep 3: Splitting genotypes by ancestry...")
+  # ========================================================================
+  # Step 5: Split genotypes by ancestry (C backend)
+  # ========================================================================
+  if (verbose) message("\nStep 4: Splitting genotypes by ancestry...")
 
-  result <- split_by_ancestry(gt_matrix, pt_matrix)
+  result <- split_by_ancestry(gt_subset, pt_subset)
+
+  # Clean up gt_subset after C call (keep pt_subset for counts - it's small)
+  rm(gt_subset)
+  gc()
 
   if (verbose) {
     message("  -> African dosage matrix: ", nrow(result$african), " x ", ncol(result$african))
     message("  -> European dosage matrix: ", nrow(result$european), " x ", ncol(result$european))
   }
 
-  # Step 4: Count ancestries per region
-  if (verbose) message("\nStep 4: Counting ancestries per region...")
+  # ========================================================================
+  # Step 6: Count ancestries per region
+  # ========================================================================
+  if (verbose) message("\nStep 5: Counting ancestries per region...")
 
   counts <- list(
-    african = count_ancestry_codes(pt_matrix, 3),
-    european = count_ancestry_codes(pt_matrix, 1),
-    mixed = count_ancestry_codes(pt_matrix, 2)
+    african = count_ancestry_codes(pt_subset, 3),
+    european = count_ancestry_codes(pt_subset, 1),
+    mixed = count_ancestry_codes(pt_subset, 2)
   )
 
   if (verbose) {
@@ -284,12 +291,14 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
     message("  -> Mixed (2): median = ", median(counts$mixed))
   }
 
-  # Step 5: Write VCFs if requested
+  # ========================================================================
+  # Step 7: Write VCFs if requested
+  # ========================================================================
   if (!is.null(vcf_path) && !is.null(out_prefix)) {
-    if (verbose) message("\nStep 5: Writing ancestry-specific VCFs...")
+    if (verbose) message("\nStep 6: Writing ancestry-specific VCFs...")
 
     .write_vcf_with_ancestry(
-      vcf_path, gt_matrix, pt_matrix,
+      vcf_path, result$african, result$european, pt_subset,
       paste0(out_prefix, "_african.vcf"),
       paste0(out_prefix, "_european.vcf")
     )
@@ -307,12 +316,12 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
     european = result$european,
     counts = counts,
     overlap = list(
-      n_samples_total = n_gt_samples_orig + n_pt_samples_orig - overlap$n_common,
-      n_samples_kept = overlap$n_common,
-      n_variants_total = n_gt_variants_orig + n_pt_regions_orig - var_overlap$n_common,
-      n_variants_kept = var_overlap$n_common,
-      dropped_samples = unique(c(overlap$dropped_from_gt, overlap$dropped_from_pt)),
-      dropped_variants = unique(c(var_overlap$dropped_from_gt, var_overlap$dropped_from_pt))
+      n_samples_total = n_gt_samples_orig + n_pt_samples_orig - n_common_samples,
+      n_samples_kept = n_common_samples,
+      n_variants_total = n_gt_variants_orig + n_pt_regions_orig - n_common_vars,
+      n_variants_kept = n_common_vars,
+      dropped_samples = unique(dropped_samples),
+      dropped_variants = unique(dropped_variants)
     )
   ))
 }
