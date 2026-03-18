@@ -99,3 +99,34 @@ test_that("result contains all expected elements", {
   expect_equal(dim(result$african), c(2, 2))
   expect_equal(dim(result$european), c(2, 2))
 })
+
+test_that("run_ancestry_pipeline filters monomorphic variants", {
+  # GT: var1 has alt alleles, var2 is monomorphic (all 0)
+  gt <- matrix(c(2, 1, 0, 0, 0, 0), nrow = 2, ncol = 3,
+               dimnames = list(c("var1", "var2"),
+                               c("s1", "s2", "s3")))
+
+  pt <- matrix(c(3, 2, 1, 3, 2, 1), nrow = 3, ncol = 2,
+               dimnames = list(c("s1", "s2", "s3"),
+                               c("var1", "var2")))
+
+  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
+
+  # var2 should be filtered out
+  expect_equal(result$overlap$n_monomorphic_filtered, 1)
+  expect_equal(result$overlap$n_variants_kept, 1)
+  expect_equal(nrow(result$african), 1)
+})
+
+test_that("run_ancestry_pipeline stops if all variants are monomorphic", {
+  gt <- matrix(0, nrow = 3, ncol = 2,
+               dimnames = list(c("v1", "v2", "v3"),
+                               c("s1", "s2")))
+
+  pt <- matrix(1, nrow = 2, ncol = 3,
+               dimnames = list(c("s1", "s2"),
+                               c("v1", "v2", "v3")))
+
+  expect_error(run_ancestry_pipeline(gt, pt, verbose = FALSE),
+               "All variants are monomorphic")
+})

@@ -259,6 +259,27 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
   }
 
   # ========================================================================
+  # Step 4: Filter monomorphic variants (no alt alleles)
+  # ========================================================================
+  if (verbose) message("\nStep 3b: Filtering monomorphic variants...")
+
+  variant_has_alt <- rowSums(gt_subset > 0) > 0
+  n_monomorphic <- sum(!variant_has_alt)
+
+  if (n_monomorphic > 0) {
+    if (verbose) message("  Removed ", n_monomorphic, " monomorphic variants (no alt alleles)")
+
+    gt_subset <- gt_subset[variant_has_alt, , drop = FALSE]
+    pt_subset <- pt_subset[, variant_has_alt, drop = FALSE]
+
+    dropped_variants <- c(dropped_variants, rownames(gt_subset)[!variant_has_alt])
+  }
+
+  if (nrow(gt_subset) == 0) {
+    stop("All variants are monomorphic (no alt alleles)")
+  }
+
+  # ========================================================================
   # Step 5: Split genotypes by ancestry (C backend)
   # ========================================================================
   if (verbose) message("\nStep 4: Splitting genotypes by ancestry...")
@@ -318,8 +339,9 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
     overlap = list(
       n_samples_total = n_gt_samples_orig + n_pt_samples_orig - n_common_samples,
       n_samples_kept = n_common_samples,
-      n_variants_total = n_gt_variants_orig + n_pt_regions_orig - n_common_vars,
-      n_variants_kept = n_common_vars,
+      n_variants_total = n_gt_variants_orig,
+      n_variants_kept = nrow(gt_subset),
+      n_monomorphic_filtered = n_monomorphic,
       dropped_samples = unique(dropped_samples),
       dropped_variants = unique(dropped_variants)
     )
