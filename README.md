@@ -10,6 +10,7 @@ R package for **Ancestry-Specific Rare Variant Association Analysis** with pure 
 - Efficient matrix operations for ancestry code counting
 - Genotype splitting by ancestry (African/European)
 - Direct data frame/matrix input (no PLINK dependency)
+- **Automatic overlap handling** for sample and variant mismatches
 
 ## Installation
 
@@ -72,6 +73,43 @@ result$counts     # Ancestry counts per region
 - **Rows**: Variants
 - **Columns**: Samples (must match PT matrix columns)
 - **Values**: 0, 1, 2 (dosage of alternate allele)
+
+## Automatic Overlap Handling
+
+The pipeline automatically handles mismatches between GT and PT matrices:
+
+### Sample Mismatches
+```r
+# GT has samples A, B, C
+# PT has samples A, B, D
+# -> Only A and B are used
+
+gt <- matrix(0, nrow = 2, ncol = 3,
+             dimnames = list(c("v1", "v2"), c("A", "B", "C")))
+pt <- matrix(1, nrow = 3, ncol = 2,
+             dimnames = list(c("A", "B", "D"), c("v1", "v2")))
+
+result <- run_ancestry_pipeline(gt, pt)
+# result$overlap$n_samples_kept = 2
+# result$overlap$dropped_samples = c("C", "D")
+```
+
+### Variant/Region Mismatches
+```r
+# GT variants: chr22:100, chr22:200, chr22:300
+# PT regions: chr22:50-150, chr22:150-250
+# -> Only chr22:100 and chr22:200 are used (matched by coordinate)
+
+gt <- matrix(0, nrow = 3, ncol = 2,
+             dimnames = list(c("chr22:100", "chr22:200", "chr22:300"),
+                             c("s1", "s2")))
+pt <- matrix(1, nrow = 2, ncol = 2,
+             dimnames = list(c("s1", "s2"),
+                             c("chr22:50-150", "chr22:150-250")))
+
+result <- run_ancestry_pipeline(gt, pt)
+# result$overlap$n_variants_kept = 2
+```
 
 ## Core Functions
 
