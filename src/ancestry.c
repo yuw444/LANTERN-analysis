@@ -1,29 +1,4 @@
-#include <R.h>
-#include <Rinternals.h>
-#include <R_ext/Parse.h>
-#include <stdlib.h>
-#include <string.h>
-
-#define MAX_SAMPLES 100000
-#define MAX_VARIANTS 1000000
-
-typedef struct {
-    int n_samples;
-    int n_variants;
-    int *genotypes;
-    int *ancestry;
-    char **sample_ids;
-    char **variant_ids;
-} GenotypeMatrix;
-
-static int parse_plink_byte(unsigned char byte, int allele_idx) {
-    int nibble = (byte >> (allele_idx * 2)) & 0x03;
-    if (nibble == 0) return 0;
-    if (nibble == 1) return 1;
-    if (nibble == 2) return 2;
-    if (nibble == 3) return 3;
-    return 0;
-}
+#include "ancestry_code.h"
 
 static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
     SEXP mat_int = PROTECT(coerceVector(mat, INTSXP));
@@ -167,7 +142,6 @@ static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancest
     const char *vcf_eur = CHAR(STRING_ELT(output_european, 0));
     
     int nrow = INTEGER(gt_matrix)[0];
-    int ncol = INTEGER(gt_matrix)[1];
     
     FILE *in = fopen(vcf_in, "r");
     if (!in) error("Cannot open input VCF: %s", vcf_in);
@@ -197,7 +171,6 @@ static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancest
         fprintf(out_afr, "%s\t%s\t%s\t%s\t%s\t", fields[0], fields[1], fields[2], fields[3], fields[4]);
         fprintf(out_eur, "%s\t%s\t%s\t%s\t%s\t", fields[0], fields[1], fields[2], fields[3], fields[4]);
         
-        int format_written = 0;
         for (int i = 9; i < n; i++) {
             if (i > 9) {
                 fprintf(out_afr, "\t");
@@ -226,14 +199,13 @@ static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancest
                 sprintf(gt_eur, "0/0");
             }
             
-            if (!format_written) {
-                fprintf(out_afr, "GT:%s", "DS");
-                fprintf(out_eur, "GT:%s", "DS");
-                format_written = 1;
-            }
-            
             double ds_afr = (an == 3) ? gt : ((an == 2) ? gt * 0.5 : 0);
             double ds_eur = (an == 1) ? gt : ((an == 2) ? gt * 0.5 : 0);
+            
+            if (i == 9) {
+                fprintf(out_afr, "GT:DS");
+                fprintf(out_eur, "GT:DS");
+            }
             
             fprintf(out_afr, "\t%s:%.2f", gt_afr, ds_afr);
             fprintf(out_eur, "\t%s:%.2f", gt_eur, ds_eur);
@@ -293,16 +265,24 @@ static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP en
     return R_NilValue;
 }
 
-static const R_CallMethodDef CallEntries[] = {
-    {"count_ancestry_codes_C", (DL_FUNC) &count_ancestry_codes_c, 2},
-    {"split_by_ancestry_C", (DL_FUNC) &split_by_ancestry_c, 2},
-    {"read_bed_file_C", (DL_FUNC) &read_bed_file_c, 4},
-    {"write_vcf_with_ancestry_C", (DL_FUNC) &write_vcf_with_ancestry_c, 5},
-    {"subset_vcf_by_range_C", (DL_FUNC) &subset_vcf_by_range_c, 5},
-    {NULL, NULL, 0}
-};
+/* Exported functions - called from init.c registration */
+SEXP count_ancestry_codes(SEXP mat, SEXP code) {
+    return count_ancestry_codes_c(mat, code);
+}
 
-void R_init_lantern(DllInfo *dll) {
-    R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
-    R_useDynamicSymbols(dll, FALSE);
+SEXP split_by_ancestry(SEXP gt_genotype, SEXP ancestry) {
+    return split_by_ancestry_c(gt_genotype, ancestry);
+}
+
+SEXP read_bed_file(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sample_indices) {
+    return read_bed_file_c(bed_path, bim_path, fam_path, sample_indices);
+}
+
+SEXP write_vcf_with_ancestry(SEXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix, 
+                              SEXP output_african, SEXP output_european) {
+    return write_vcf_with_ancestry_c(vcf_path, gt_matrix, ancestry_matrix, output_african, output_european);
+}
+
+SEXP subset_vcf_by_range(SEXP vcf_path, SEXP chrom, SEXP start, SEXP end, SEXP output_path) {
+    return subset_vcf_by_range_c(vcf_path, chrom, start, end, output_path);
 }
