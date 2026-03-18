@@ -11,6 +11,7 @@ R package for **Ancestry-Specific Rare Variant Association Analysis** with pure 
 - Genotype splitting by ancestry (African/European)
 - Direct data frame/matrix input (no PLINK dependency)
 - **Automatic overlap handling** for sample and variant mismatches
+- **Monomorphic filtering** - removes variants with no alt alleles
 
 ## Installation
 
