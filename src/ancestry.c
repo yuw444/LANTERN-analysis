@@ -26,8 +26,9 @@ static int parse_plink_byte(unsigned char byte, int allele_idx) {
 }
 
 static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
-    int nrow = INTEGER(mat)[0];
-    int ncol = INTEGER(mat)[1];
+    SEXP mat_int = PROTECT(coerceVector(mat, INTSXP));
+    int nrow = INTEGER(mat_int)[0];
+    int ncol = INTEGER(mat_int)[1];
     int target_code = INTEGER(code)[0];
     
     SEXP result = PROTECT(allocVector(INTSXP, nrow));
@@ -36,25 +37,28 @@ static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
     for (int i = 0; i < nrow; i++) {
         res_ptr[i] = 0;
         for (int j = 0; j < ncol; j++) {
-            if (INTEGER(mat)[i + nrow * j] == target_code) {
+            if (INTEGER(mat_int)[i + nrow * j] == target_code) {
                 res_ptr[i]++;
             }
         }
     }
     
-    UNPROTECT(1);
+    UNPROTECT(2);
     return result;
 }
 
 static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
-    int nrow = INTEGER(gt_genotype)[0];
-    int ncol = INTEGER(gt_genotype)[1];
+    SEXP gt_int = PROTECT(coerceVector(gt_genotype, INTSXP));
+    SEXP an_int = PROTECT(coerceVector(ancestry, INTSXP));
+    
+    int nrow = INTEGER(gt_int)[0];
+    int ncol = INTEGER(gt_int)[1];
     
     SEXP african = PROTECT(allocMatrix(INTSXP, nrow, ncol));
     SEXP european = PROTECT(allocMatrix(INTSXP, nrow, ncol));
     
-    int *gt_ptr = INTEGER(gt_genotype);
-    int *an_ptr = INTEGER(ancestry);
+    int *gt_ptr = INTEGER(gt_int);
+    int *an_ptr = INTEGER(an_int);
     int *afr_ptr = INTEGER(african);
     int *eur_ptr = INTEGER(european);
     
@@ -87,7 +91,7 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
     SET_STRING_ELT(names, 1, mkChar("european"));
     setAttrib(result, R_NamesSymbol, names);
     
-    UNPROTECT(4);
+    UNPROTECT(6);
     return result;
 }
 
@@ -154,7 +158,7 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sa
     return result;
 }
 
-static SEXP write_vcf_with_ancestry_c(EXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix, 
+static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix, 
                                         SEXP output_african, SEXP output_european) {
     const char *vcf_in = CHAR(STRING_ELT(vcf_path, 0));
     const char *vcf_afr = CHAR(STRING_ELT(output_african, 0));
@@ -288,11 +292,11 @@ static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP en
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"count_ancestry_codes", (DL_FUNC) &count_ancestry_codes_c, 2},
-    {"split_by_ancestry", (DL_FUNC) &split_by_ancestry_c, 2},
-    {"read_bed_file", (DL_FUNC) &read_bed_file_c, 4},
-    {"write_vcf_with_ancestry", (DL_FUNC) &write_vcf_with_ancestry_c, 5},
-    {"subset_vcf_by_range", (DL_FUNC) &subset_vcf_by_range_c, 5},
+    {"count_ancestry_codes_C", (DL_FUNC) &count_ancestry_codes_c, 2},
+    {"split_by_ancestry_C", (DL_FUNC) &split_by_ancestry_c, 2},
+    {"read_bed_file_C", (DL_FUNC) &read_bed_file_c, 4},
+    {"write_vcf_with_ancestry_C", (DL_FUNC) &write_vcf_with_ancestry_c, 5},
+    {"subset_vcf_by_range_C", (DL_FUNC) &subset_vcf_by_range_c, 5},
     {NULL, NULL, 0}
 };
 

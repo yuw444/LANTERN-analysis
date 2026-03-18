@@ -17,25 +17,29 @@
 NULL
 
 .count_ancestry_codes <- function(mat, code) {
-    .Call("count_ancestry_codes", mat, code, PACKAGE = "lantern")
+    storage.mode(mat) <- "integer"
+    code <- as.integer(code)
+    .Call("count_ancestry_codes_C", mat, code, PACKAGE = "lantern")
 }
 
 .split_by_ancestry <- function(gt_genotype, ancestry) {
-    .Call("split_by_ancestry", gt_genotype, ancestry, PACKAGE = "lantern")
+    storage.mode(gt_genotype) <- "integer"
+    storage.mode(ancestry) <- "integer"
+    .Call("split_by_ancestry_C", gt_genotype, ancestry, PACKAGE = "lantern")
 }
 
 .read_bed_file <- function(bed_path, bim_path, fam_path, sample_indices = NULL) {
-    .Call("read_bed_file", bed_path, bim_path, fam_path, sample_indices, PACKAGE = "lantern")
+    .Call("read_bed_file_C", bed_path, bim_path, fam_path, sample_indices, PACKAGE = "lantern")
 }
 
 .write_vcf_with_ancestry <- function(vcf_path, gt_matrix, ancestry_matrix, 
                                       output_african, output_european) {
-    .Call("write_vcf_with_ancestry", vcf_path, gt_matrix, ancestry_matrix, 
+    .Call("write_vcf_with_ancestry_C", vcf_path, gt_matrix, ancestry_matrix, 
           output_african, output_european, PACKAGE = "lantern")
 }
 
 .subset_vcf_by_range <- function(vcf_path, chrom, start, end, output_path) {
-    .Call("subset_vcf_by_range", vcf_path, chrom, start, end, output_path, PACKAGE = "lantern")
+    .Call("subset_vcf_by_range_C", vcf_path, chrom, start, end, output_path, PACKAGE = "lantern")
 }
 
 #' Count ancestry codes in matrix
