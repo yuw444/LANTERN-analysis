@@ -1,0 +1,24 @@
+Package: lantern
+Type: Package
+Title: Ancestry-Specific Rare Variant Association Analysis
+Version: 0.1.0
+Authors@R: 
+    person(given = "First",
+           family = "Last",
+           role = c("aut", "cre"),
+           email = "author@example.com")
+Description: R package for ancestry-specific rare variant association 
+    analysis with pure C backend for performance-critical operations.
+License: MIT
+Encoding: UTF-8
+LazyData: true
+Imports: 
+    data.table,
+    dplyr,
+    SeqArray,
+    SeqVarTools
+LinkingTo: 
+    CForBio
+RoxygenNote: 7.3.2
+Suggests: 
+    testthat (>= 3.0.0)
