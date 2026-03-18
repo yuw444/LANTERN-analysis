@@ -43,13 +43,67 @@ test_that("split_by_ancestry handles pure ancestries", {
   expect_equal(result$european[2, 1], 0)
 })
 
-test_that("split_by_ancestry handles mixed ancestry", {
-  gt <- matrix(c(1, 2, 0), nrow = 1, ncol = 3)
+test_that("split_by_ancestry handles homozygous alt mixed ancestry", {
+  gt <- matrix(c(2, 2, 2), nrow = 1, ncol = 3)
   an <- matrix(c(2, 2, 2), nrow = 1, ncol = 3)
   
   result <- split_by_ancestry(gt, an)
   
-  expect_equal(result$african[1, 1], result$european[1, 1])
+  expect_equal(result$african[1, 1], 1.0)
+  expect_equal(result$european[1, 1], 1.0)
+})
+
+test_that("split_by_ancestry p1/p2 calculation with known values", {
+  # For a variant with:
+  # - 1 pure African het (pt=3, gt=1) -> N1=0, N2=1
+  # - 1 mixed het (pt=2, gt=1) -> N4=0, N5=1
+  # - 1 pure European het (pt=1, gt=1) -> N7=0, N8=1
+  #
+  # total_alt = 0*2 + 1 + 0 + 1 + 0*2 + 1 = 3
+  # p1 = (0 + 1 + 0) / (3 - 1) = 0.5
+  # p2 = (0 + 0 + 1) / (3 - 1) = 0.5
+  
+  gt <- matrix(c(1, 1, 1), nrow = 1, ncol = 3)
+  an <- matrix(c(3, 2, 1), nrow = 1, ncol = 3)
+  
+  result <- split_by_ancestry(gt, an)
+  
+  expect_equal(result$african[1, 1], 1.0)  # Pure African het
+  expect_equal(result$european[1, 3], 1.0)  # Pure European het
+  expect_equal(result$african[1, 2], 0.5)   # Mixed het -> p1 = 0.5
+  expect_equal(result$european[1, 2], 0.5)  # Mixed het -> p2 = 0.5
+})
+
+test_that("split_by_ancestry singleton case", {
+  # Singleton: only one het with mixed ancestry
+  gt <- matrix(c(1), nrow = 1, ncol = 1)
+  an <- matrix(c(2), nrow = 1, ncol = 1)
+  
+  result <- split_by_ancestry(gt, an)
+  
+  expect_equal(result$african[1, 1], 0.5)
+  expect_equal(result$european[1, 1], 0.5)
+})
+
+test_that("split_by_ancestry non-singleton mixed p1 calculation", {
+  # For a variant with:
+  # - 2 pure African het (pt=3, gt=1) -> N1=0, N2=2
+  # - 1 mixed het (pt=2, gt=1) -> N4=0, N5=1
+  # - 0 pure European het (pt=1, gt=1) -> N7=0, N8=0
+  #
+  # total_alt = 0*2 + 2 + 0 + 1 + 0*2 + 0 = 3
+  # p1 = (0 + 2 + 0) / (3 - 1) = 1.0
+  # p2 = (0 + 0 + 0) / (3 - 1) = 0.0
+  
+  gt <- matrix(c(1, 1, 1), nrow = 1, ncol = 3)
+  an <- matrix(c(3, 3, 2), nrow = 1, ncol = 3)
+  
+  result <- split_by_ancestry(gt, an)
+  
+  expect_equal(result$african[1, 1], 1.0)
+  expect_equal(result$african[1, 2], 1.0)
+  expect_equal(result$african[1, 3], 1.0)   # Mixed het -> p1 = 1.0
+  expect_equal(result$european[1, 3], 0.0)   # Mixed het -> p2 = 0.0
 })
 
 test_that("NA and invalid codes handled", {
@@ -60,4 +114,14 @@ test_that("NA and invalid codes handled", {
   
   expect_equal(result$african[1, 1], 0)
   expect_equal(result$european[2, 1], 0)
+})
+
+test_that("split_by_ancestry homozygous alt pure ancestries", {
+  gt <- matrix(c(2, 2), nrow = 1, ncol = 2)
+  an <- matrix(c(3, 1), nrow = 1, ncol = 2)
+  
+  result <- split_by_ancestry(gt, an)
+  
+  expect_equal(result$african[1, 1], 2.0)  # Homozygous alt with African
+  expect_equal(result$european[1, 2], 2.0)  # Homozygous alt with European
 })

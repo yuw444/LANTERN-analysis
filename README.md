@@ -121,6 +121,36 @@ result <- run_ancestry_pipeline(gt, pt)
 | `write_vcf_with_ancestry(...)` | Write ancestry-specific VCFs |
 | `subset_vcf_by_range(...)` | Filter VCF by genomic region |
 
+## Ancestry Splitting Algorithm
+
+For heterozygous genotypes (gt=1) with mixed ancestry (pt=2), the algorithm uses
+population-based proportions (p1, p2):
+
+### Formulas
+
+```
+p1 = (2*N1 + N2 + N4) / (2*N1 + N2 + 2*N4 + 2*N7 + N8)
+p2 = (N4 + 2*N7 + N8) / (2*N1 + N2 + 2*N4 + 2*N7 + N8)
+```
+
+Where N1-N8 are counts per variant:
+
+| Code | GT | Description |
+|------|-----|-------------|
+| N1 | pt=3, gt=2 | Pure African, homozygous alt |
+| N2 | pt=3, gt=1 | Pure African, heterozygous |
+| N4 | pt=2, gt=2 | Mixed, homozygous alt |
+| N5 | pt=2, gt=1 | Mixed, heterozygous |
+| N7 | pt=1, gt=2 | Pure European, homozygous alt |
+| N8 | pt=1, gt=1 | Pure European, heterozygous |
+
+### Special Cases
+
+- **Singleton**: When all alt alleles come from mixed het individuals (N5 = sum(gt)),
+  p1 = p2 = 0.5
+- **Homozygous alt (gt=2)**: 1 allele to each ancestry regardless of pt
+- **Pure ancestry (pt=1 or pt=3)**: All alt alleles to that ancestry
+
 ## Dependencies
 
 - R >= 4.0

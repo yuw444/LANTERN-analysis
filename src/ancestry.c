@@ -1,5 +1,37 @@
-#include "ancestry_code.h"
+#include "ancestry.h"
 
+// ============================================================================
+// Helper: Count ancestry-genotype combinations for a variant
+// ============================================================================
+// Returns counts for a single variant (row):
+// N1 = pt==3 & gt==2, N2 = pt==3 & gt==1
+// N4 = pt==2 & gt==2, N5 = pt==2 & gt==1 (singleton case)
+// N7 = pt==1 & gt==2, N8 = pt==1 & gt==1
+typedef struct {
+    int N1, N2, N4, N5, N7, N8;
+} VariantCounts;
+
+static VariantCounts count_variant_combinations(int *gt_ptr, int *an_ptr, int nrow, int ncol, int row) {
+    VariantCounts cnt = {0, 0, 0, 0, 0, 0};
+    
+    for (int j = 0; j < ncol; j++) {
+        int gt = gt_ptr[row + nrow * j];
+        int an = an_ptr[row + nrow * j];
+        
+        if (an == 3 && gt == 2) cnt.N1++;
+        else if (an == 3 && gt == 1) cnt.N2++;
+        else if (an == 2 && gt == 2) cnt.N4++;
+        else if (an == 2 && gt == 1) cnt.N5++;
+        else if (an == 1 && gt == 2) cnt.N7++;
+        else if (an == 1 && gt == 1) cnt.N8++;
+    }
+    
+    return cnt;
+}
+
+// ============================================================================
+// count_ancestry_codes: Count occurrences of a code per row
+// ============================================================================
 static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
     SEXP mat_int = PROTECT(coerceVector(mat, INTSXP));
     SEXP dim = PROTECT(getAttrib(mat_int, R_DimSymbol));
@@ -9,11 +41,12 @@ static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
     
     SEXP result = PROTECT(allocVector(INTSXP, nrow));
     int *res_ptr = INTEGER(result);
+    int *mat_ptr = INTEGER(mat_int);
     
     for (int i = 0; i < nrow; i++) {
         res_ptr[i] = 0;
         for (int j = 0; j < ncol; j++) {
-            if (INTEGER(mat_int)[i + nrow * j] == target_code) {
+            if (mat_ptr[i + nrow * j] == target_code) {
                 res_ptr[i]++;
             }
         }
@@ -23,6 +56,9 @@ static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
     return result;
 }
 
+// ============================================================================
+// split_by_ancestry: Split genotype matrix by ancestry with proper p1/p2
+// ============================================================================
 static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
     SEXP gt_int = PROTECT(coerceVector(gt_genotype, INTSXP));
     SEXP an_int = PROTECT(coerceVector(ancestry, INTSXP));
@@ -31,35 +67,87 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
     int nrow = INTEGER(dim)[0];
     int ncol = INTEGER(dim)[1];
     
-    SEXP african = PROTECT(allocMatrix(INTSXP, nrow, ncol));
-    SEXP european = PROTECT(allocMatrix(INTSXP, nrow, ncol));
+    // Allocate output matrices
+    SEXP african = PROTECT(allocMatrix(REALSXP, nrow, ncol));
+    SEXP european = PROTECT(allocMatrix(REALSXP, nrow, ncol));
     
     int *gt_ptr = INTEGER(gt_int);
     int *an_ptr = INTEGER(an_int);
-    int *afr_ptr = INTEGER(african);
-    int *eur_ptr = INTEGER(european);
+    double *afr_ptr = REAL(african);
+    double *eur_ptr = REAL(european);
     
+    // Process each variant (row)
     for (int i = 0; i < nrow; i++) {
+        // Count ancestry-genotype combinations for this variant
+        VariantCounts cnt = count_variant_combinations(gt_ptr, an_ptr, nrow, ncol, i);
+        
+        // Calculate p1 and p2
+        // p1 = (2*N1 + N2 + N4) / (2*N1 + N2 + 2*N4 + 2*N7 + N8)
+        // p2 = (N4 + 2*N7 + N8) / (2*N1 + N2 + 2*N4 + 2*N7 + N8)
+        // 
+        // Singleton case: if N5 == sum(gt), p1 = p2 = 0.5
+        
+        double total_alt = 2 * cnt.N1 + cnt.N2 + cnt.N4 + cnt.N5 + 2 * cnt.N7 + cnt.N8;
+        double p1, p2;
+        
+        if (cnt.N5 > 0 && total_alt == (double)cnt.N5) {
+            // Singleton case: all alt alleles are from mixed het individuals
+            p1 = 0.5;
+            p2 = 0.5;
+        } else {
+            // Denominator excludes heterozygous mixed (N5) - those are split
+            double denominator = total_alt - cnt.N5;
+            
+            if (denominator > 0) {
+                double numerator_p1 = 2.0 * cnt.N1 + cnt.N2 + cnt.N4;
+                double numerator_p2 = cnt.N4 + 2.0 * cnt.N7 + cnt.N8;
+                p1 = numerator_p1 / denominator;
+                p2 = numerator_p2 / denominator;
+            } else {
+                // Edge case: no non-singleton data
+                p1 = 0.5;
+                p2 = 0.5;
+            }
+        }
+        
+        // Apply splitting to each sample
         for (int j = 0; j < ncol; j++) {
             int gt = gt_ptr[i + nrow * j];
             int an = an_ptr[i + nrow * j];
+            int idx = i + nrow * j;
             
             if (an == 3) {
-                afr_ptr[i + nrow * j] = gt * 2;
-                eur_ptr[i + nrow * j] = 0;
+                // Pure African (EUR/EUR = 0)
+                afr_ptr[idx] = gt;  // All alt alleles from African
+                eur_ptr[idx] = 0.0;
             } else if (an == 1) {
-                afr_ptr[i + nrow * j] = 0;
-                eur_ptr[i + nrow * j] = gt * 2;
+                // Pure European
+                afr_ptr[idx] = 0.0;
+                eur_ptr[idx] = gt;  // All alt alleles from European
             } else if (an == 2) {
-                afr_ptr[i + nrow * j] = gt;
-                eur_ptr[i + nrow * j] = gt;
+                // Mixed ancestry: split based on p1/p2
+                if (gt == 2) {
+                    // Homozygous alt: 1 allele to each ancestry
+                    afr_ptr[idx] = 1.0;
+                    eur_ptr[idx] = 1.0;
+                } else if (gt == 1) {
+                    // Heterozygous: split by p1/p2
+                    afr_ptr[idx] = p1;
+                    eur_ptr[idx] = p2;
+                } else {
+                    // Homozygous ref
+                    afr_ptr[idx] = 0.0;
+                    eur_ptr[idx] = 0.0;
+                }
             } else {
-                afr_ptr[i + nrow * j] = 0;
-                eur_ptr[i + nrow * j] = 0;
+                // Invalid/missing ancestry code
+                afr_ptr[idx] = 0.0;
+                eur_ptr[idx] = 0.0;
             }
         }
     }
     
+    // Create named list result
     SEXP result = PROTECT(allocVector(VECSXP, 2));
     SET_VECTOR_ELT(result, 0, african);
     SET_VECTOR_ELT(result, 1, european);
@@ -72,6 +160,9 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
     return result;
 }
 
+// ============================================================================
+// read_bed_file: Read PLINK binary files
+// ============================================================================
 static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sample_indices) {
     const char *bed = CHAR(STRING_ELT(bed_path, 0));
     const char *bim = CHAR(STRING_ELT(bim_path, 0));
@@ -118,10 +209,10 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sa
             int bit_idx = (s % 4) * 2;
             int genotype = (buffer[byte_idx] >> bit_idx) & 0x03;
             
-            if (genotype == 3) gt[s + n_samples * v] = 3;
-            else if (genotype == 2) gt[s + n_samples * v] = 2;
-            else if (genotype == 1) gt[s + n_samples * v] = 1;
-            else gt[s + n_samples * v] = 0;
+            if (genotype == 3) gt[s + n_samples * v] = 3;  // Missing
+            else if (genotype == 2) gt[s + n_samples * v] = 2;  // Homozygous alt
+            else if (genotype == 1) gt[s + n_samples * v] = 1;  // Heterozygous
+            else gt[s + n_samples * v] = 0;  // Homozygous ref
         }
     }
     fclose(fp);
@@ -135,6 +226,9 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sa
     return result;
 }
 
+// ============================================================================
+// write_vcf_with_ancestry: Write VCF with ancestry-specific dosages
+// ============================================================================
 static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix, 
                                         SEXP output_african, SEXP output_european) {
     const char *vcf_in = CHAR(STRING_ELT(vcf_path, 0));
@@ -182,25 +276,41 @@ static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancest
             int an = INTEGER(ancestry_matrix)[sample_idx + nrow * (i - 9)];
             
             char gt_afr[20], gt_eur[20];
+            double ds_afr, ds_eur;
             
             if (an == 3) {
-                sprintf(gt_afr, "%d/%d", gt, gt);
+                sprintf(gt_afr, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
                 sprintf(gt_eur, "0/0");
+                ds_afr = gt > 0 ? (gt > 1 ? 2.0 : 1.0) : 0.0;
+                ds_eur = 0.0;
             } else if (an == 1) {
                 sprintf(gt_afr, "0/0");
-                sprintf(gt_eur, "%d/%d", gt, gt);
+                sprintf(gt_eur, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
+                ds_afr = 0.0;
+                ds_eur = gt > 0 ? (gt > 1 ? 2.0 : 1.0) : 0.0;
             } else if (an == 2) {
-                int a1 = gt > 0 ? 1 : 0;
-                int a2 = gt > 1 ? 1 : 0;
-                sprintf(gt_afr, "%d/%d", a1, a2);
-                sprintf(gt_eur, "%d/%d", gt - a1, gt - a2);
+                if (gt == 2) {
+                    sprintf(gt_afr, "1/0");
+                    sprintf(gt_eur, "0/1");
+                    ds_afr = 1.0;
+                    ds_eur = 1.0;
+                } else if (gt == 1) {
+                    sprintf(gt_afr, "0/1");
+                    sprintf(gt_eur, "0/1");
+                    ds_afr = 0.5;
+                    ds_eur = 0.5;
+                } else {
+                    sprintf(gt_afr, "0/0");
+                    sprintf(gt_eur, "0/0");
+                    ds_afr = 0.0;
+                    ds_eur = 0.0;
+                }
             } else {
                 sprintf(gt_afr, "0/0");
                 sprintf(gt_eur, "0/0");
+                ds_afr = 0.0;
+                ds_eur = 0.0;
             }
-            
-            double ds_afr = (an == 3) ? gt : ((an == 2) ? gt * 0.5 : 0);
-            double ds_eur = (an == 1) ? gt : ((an == 2) ? gt * 0.5 : 0);
             
             if (i == 9) {
                 fprintf(out_afr, "GT:DS");
@@ -221,6 +331,9 @@ static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancest
     return R_NilValue;
 }
 
+// ============================================================================
+// subset_vcf_by_range: Extract VCF region
+// ============================================================================
 static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP end, SEXP output_path) {
     const char *in_vcf = CHAR(STRING_ELT(vcf_path, 0));
     const char *out = CHAR(STRING_ELT(output_path, 0));
@@ -265,7 +378,9 @@ static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP en
     return R_NilValue;
 }
 
-/* Exported functions - called from init.c registration */
+// ============================================================================
+// Exported functions (registered in init.c)
+// ============================================================================
 SEXP count_ancestry_codes(SEXP mat, SEXP code) {
     return count_ancestry_codes_c(mat, code);
 }
