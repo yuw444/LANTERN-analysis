@@ -2,7 +2,7 @@
 #include <Rinternals.h>
 #include <R_ext/Rdynload.h>
 
-#include "ancestry_code.h"
+#include "ancestry.h"
 
 static const R_CallMethodDef CallEntries[] = {
     {"count_ancestry_codes_C", (DL_FUNC) &count_ancestry_codes, 2},
