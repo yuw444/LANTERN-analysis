@@ -118,7 +118,7 @@ test_that("run_ancestry_pipeline filters monomorphic variants", {
   expect_equal(nrow(result$african), 1)
 })
 
-test_that("run_ancestry_pipeline stops if all variants are monomorphic", {
+test_that("run_ancestry_pipeline returns empty result if all variants are monomorphic", {
   gt <- matrix(0, nrow = 3, ncol = 2,
                dimnames = list(c("v1", "v2", "v3"),
                                c("s1", "s2")))
@@ -127,6 +127,9 @@ test_that("run_ancestry_pipeline stops if all variants are monomorphic", {
                dimnames = list(c("s1", "s2"),
                                c("v1", "v2", "v3")))
 
-  expect_error(run_ancestry_pipeline(gt, pt, verbose = FALSE),
-               "All variants are monomorphic")
+  expect_warning(result <- run_ancestry_pipeline(gt, pt, verbose = FALSE),
+                 "All variants are monomorphic")
+
+  expect_equal(result$overlap$n_variants_kept, 0)
+  expect_equal(nrow(result$african), 0)
 })

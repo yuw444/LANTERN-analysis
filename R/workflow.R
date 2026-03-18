@@ -276,7 +276,21 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
   }
 
   if (nrow(gt_subset) == 0) {
-    stop("All variants are monomorphic (no alt alleles)")
+    warning("All variants are monomorphic (no alt alleles). Returning empty result.")
+    return(invisible(list(
+      african = matrix(numeric(0), nrow = 0, ncol = ncol(gt_subset)),
+      european = matrix(numeric(0), nrow = 0, ncol = ncol(gt_subset)),
+      counts = list(african = integer(0), european = integer(0), mixed = integer(0)),
+      overlap = list(
+        n_samples_total = n_gt_samples_orig + n_pt_samples_orig - n_common_samples,
+        n_samples_kept = n_common_samples,
+        n_variants_total = n_gt_variants_orig,
+        n_variants_kept = 0,
+        n_monomorphic_filtered = n_gt_variants_orig,
+        dropped_samples = unique(dropped_samples),
+        dropped_variants = unique(dropped_variants)
+      )
+    )))
   }
 
   # ========================================================================
