@@ -27,8 +27,9 @@ static int parse_plink_byte(unsigned char byte, int allele_idx) {
 
 static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
     SEXP mat_int = PROTECT(coerceVector(mat, INTSXP));
-    int nrow = INTEGER(mat_int)[0];
-    int ncol = INTEGER(mat_int)[1];
+    SEXP dim = PROTECT(getAttrib(mat_int, R_DimSymbol));
+    int nrow = INTEGER(dim)[0];
+    int ncol = INTEGER(dim)[1];
     int target_code = INTEGER(code)[0];
     
     SEXP result = PROTECT(allocVector(INTSXP, nrow));
@@ -43,16 +44,17 @@ static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
         }
     }
     
-    UNPROTECT(2);
+    UNPROTECT(3);
     return result;
 }
 
 static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
     SEXP gt_int = PROTECT(coerceVector(gt_genotype, INTSXP));
     SEXP an_int = PROTECT(coerceVector(ancestry, INTSXP));
+    SEXP dim = PROTECT(getAttrib(gt_int, R_DimSymbol));
     
-    int nrow = INTEGER(gt_int)[0];
-    int ncol = INTEGER(gt_int)[1];
+    int nrow = INTEGER(dim)[0];
+    int ncol = INTEGER(dim)[1];
     
     SEXP african = PROTECT(allocMatrix(INTSXP, nrow, ncol));
     SEXP european = PROTECT(allocMatrix(INTSXP, nrow, ncol));
@@ -91,7 +93,7 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
     SET_STRING_ELT(names, 1, mkChar("european"));
     setAttrib(result, R_NamesSymbol, names);
     
-    UNPROTECT(6);
+    UNPROTECT(7);
     return result;
 }
 
