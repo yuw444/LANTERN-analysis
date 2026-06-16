@@ -269,10 +269,10 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
   if (n_monomorphic > 0) {
     if (verbose) message("  Removed ", n_monomorphic, " monomorphic variants (no alt alleles)")
 
+    dropped_variants <- c(dropped_variants, rownames(gt_subset)[!variant_has_alt])
+
     gt_subset <- gt_subset[variant_has_alt, , drop = FALSE]
     pt_subset <- pt_subset[, variant_has_alt, drop = FALSE]
-
-    dropped_variants <- c(dropped_variants, rownames(gt_subset)[!variant_has_alt])
   }
 
   if (nrow(gt_subset) == 0) {
@@ -285,6 +285,9 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
   if (verbose) message("\nStep 4: Splitting genotypes by ancestry...")
 
   result <- split_by_ancestry(gt_subset, pt_subset)
+
+  # Capture post-filter variant count BEFORE removing gt_subset
+  n_variants_kept_final <- nrow(gt_subset)
 
   # Clean up gt_subset after C call (keep pt_subset for counts - it's small)
   rm(gt_subset)
@@ -340,7 +343,7 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
       n_samples_total = n_gt_samples_orig + n_pt_samples_orig - n_common_samples,
       n_samples_kept = n_common_samples,
       n_variants_total = n_gt_variants_orig,
-      n_variants_kept = nrow(gt_subset),
+      n_variants_kept = n_variants_kept_final,
       n_monomorphic_filtered = n_monomorphic,
       dropped_samples = unique(dropped_samples),
       dropped_variants = unique(dropped_variants)
