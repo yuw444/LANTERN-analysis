@@ -379,6 +379,69 @@ static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP en
 }
 
 // ============================================================================
+// split_phased_by_ancestry: Deterministic split using per-haplotype ancestry
+// ============================================================================
+// Each haplotype contributes its allele to whichever ancestry population it
+// was called as.  NA genotypes are treated as 0 (reference).  Any ancestry
+// code that is neither AFR nor EUR contributes nothing to either output.
+//
+// pop_codes: integer vector of length 2 — pop_codes[0] = AFR code,
+//            pop_codes[1] = EUR code (RFMix default: 0 and 1).
+static SEXP split_phased_by_ancestry_c(SEXP gt_hap0, SEXP gt_hap1,
+                                        SEXP anc_hap0, SEXP anc_hap1,
+                                        SEXP pop_codes) {
+    SEXP dim = PROTECT(getAttrib(gt_hap0, R_DimSymbol));
+    int nrow = INTEGER(dim)[0];
+    int ncol = INTEGER(dim)[1];
+    int afr_code = INTEGER(pop_codes)[0];
+    int eur_code = INTEGER(pop_codes)[1];
+
+    SEXP gh0 = PROTECT(coerceVector(gt_hap0, INTSXP));
+    SEXP gh1 = PROTECT(coerceVector(gt_hap1, INTSXP));
+    SEXP ah0 = PROTECT(coerceVector(anc_hap0, INTSXP));
+    SEXP ah1 = PROTECT(coerceVector(anc_hap1, INTSXP));
+
+    SEXP african  = PROTECT(allocMatrix(REALSXP, nrow, ncol));
+    SEXP european = PROTECT(allocMatrix(REALSXP, nrow, ncol));
+
+    int *gh0_ptr = INTEGER(gh0);
+    int *gh1_ptr = INTEGER(gh1);
+    int *ah0_ptr = INTEGER(ah0);
+    int *ah1_ptr = INTEGER(ah1);
+    double *afr_ptr = REAL(african);
+    double *eur_ptr = REAL(european);
+
+    int n = nrow * ncol;
+    for (int k = 0; k < n; k++) {
+        int g0 = (gh0_ptr[k] == NA_INTEGER) ? 0 : gh0_ptr[k];
+        int g1 = (gh1_ptr[k] == NA_INTEGER) ? 0 : gh1_ptr[k];
+        int a0 = ah0_ptr[k];
+        int a1 = ah1_ptr[k];
+
+        double afr = 0.0, eur = 0.0;
+        if (a0 == afr_code)      afr += g0;
+        else if (a0 == eur_code) eur += g0;
+
+        if (a1 == afr_code)      afr += g1;
+        else if (a1 == eur_code) eur += g1;
+
+        afr_ptr[k] = afr;
+        eur_ptr[k] = eur;
+    }
+
+    SEXP result = PROTECT(allocVector(VECSXP, 2));
+    SET_VECTOR_ELT(result, 0, african);
+    SET_VECTOR_ELT(result, 1, european);
+    SEXP names = PROTECT(allocVector(STRSXP, 2));
+    SET_STRING_ELT(names, 0, mkChar("african"));
+    SET_STRING_ELT(names, 1, mkChar("european"));
+    setAttrib(result, R_NamesSymbol, names);
+
+    UNPROTECT(9);
+    return result;
+}
+
+// ============================================================================
 // Exported functions (registered in init.c)
 // ============================================================================
 SEXP count_ancestry_codes(SEXP mat, SEXP code) {
@@ -400,4 +463,10 @@ SEXP write_vcf_with_ancestry(SEXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix
 
 SEXP subset_vcf_by_range(SEXP vcf_path, SEXP chrom, SEXP start, SEXP end, SEXP output_path) {
     return subset_vcf_by_range_c(vcf_path, chrom, start, end, output_path);
+}
+
+SEXP split_phased_by_ancestry(SEXP gt_hap0, SEXP gt_hap1,
+                               SEXP anc_hap0, SEXP anc_hap1,
+                               SEXP pop_codes) {
+    return split_phased_by_ancestry_c(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes);
 }

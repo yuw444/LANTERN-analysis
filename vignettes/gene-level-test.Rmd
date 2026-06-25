@@ -1,0 +1,295 @@
+---
+title: "Ancestry-stratified gene-level burden tests"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Ancestry-stratified gene-level burden tests}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(lantern)
+```
+
+## Overview
+
+After splitting genotype dosages by local ancestry (see
+`vignette("vcf-splitting")`), LANTERN feeds the resulting ancestry-specific
+dosage matrices into **SMMAT** (Sequence Kernel Association Mixed Model
+Association Test) via the **GMMAT** package.  Three parallel tests are run
+for each gene:
+
+| Label | Dosage input | Captures |
+|-------|--------------|---------|
+| **AA** | African-ancestry dosage | effects acting through AFR haplotypes |
+| **EE** | European-ancestry dosage | effects acting through EUR haplotypes |
+| **observed** | Raw unphased dosage | aggregate signal (serves as baseline) |
+
+The AA and EE p-values can then be combined with a Cauchy or Fisher
+meta-analysis step to produce a single multi-ancestry gene p-value.
+
+---
+
+## 1  Toy data setup
+
+We simulate a small dataset that mirrors the real-data workflow: 60
+independent samples, 1 gene with 18 rare variants.
+
+```{r toy-setup}
+set.seed(2025)
+N      <- 60     # samples
+N_VAR  <- 18     # variants in the toy gene
+GENE   <- "TOYGENE1"
+CHROM  <- "1"
+
+# Simulate independent samples (identity kinship) —
+# in real data replace with the LANTERN_kinship_rds.rds matrix
+Kmat    <- diag(N)
+samp_id <- paste0("S", sprintf("%03d", seq_len(N)))
+rownames(Kmat) <- colnames(Kmat) <- samp_id
+
+# Binary phenotype (case/control) with case fraction ~30%
+pheno <- rbinom(N, 1, 0.3)
+df_pheno <- data.frame(id = samp_id, y = pheno)
+```
+
+### 1.1  Simulate ancestry-split dosage matrices
+
+We start from a raw unphased GT matrix and a per-variant ancestry code
+matrix, then call the LANTERN C backend.
+
+```{r simulate-dosages}
+# Rare variant dosages: mostly 0, occasionally 1, rarely 2
+gt_raw <- matrix(
+  sample(0:2, N_VAR * N, replace = TRUE, prob = c(0.90, 0.09, 0.01)),
+  nrow = N_VAR, ncol = N
+)
+rownames(gt_raw) <- paste0(CHROM, ":", seq(1e6, by = 500, length.out = N_VAR))
+colnames(gt_raw) <- samp_id
+
+# Ancestry codes: 1=EUR, 2=MIX, 3=AFR — admixed cohort with ~40% AFR
+anc_raw <- matrix(
+  sample(1:3, N_VAR * N, replace = TRUE, prob = c(0.35, 0.25, 0.40)),
+  nrow = N_VAR, ncol = N,
+  dimnames = dimnames(gt_raw)
+)
+
+split_out <- split_by_ancestry(gt_raw, anc_raw)
+ds_afr <- split_out$african    # variants × samples, African ancestry dosage
+ds_eur <- split_out$european   # variants × samples, European ancestry dosage
+
+cat("AFR dosage: ", nrow(ds_afr), "variants ×", ncol(ds_afr), "samples\n")
+cat("EUR dosage: ", nrow(ds_eur), "variants ×", ncol(ds_eur), "samples\n")
+cat("AFR mean per-variant dosage:", round(mean(ds_afr), 4), "\n")
+cat("EUR mean per-variant dosage:", round(mean(ds_eur), 4), "\n")
+```
+
+---
+
+## 2  Packaging dosage matrices into GDS files
+
+SMMAT reads variants from **SeqArray GDS** files with a `DS` (dosage) FORMAT
+field.  We create them from temporary VCFs.
+
+```{r write-vcf-helper}
+# Helper: write a minimal VCF with GT:DS format
+write_ds_vcf <- function(path, dosage_mat, sample_ids,
+                         chrom, positions, ref, alt) {
+  n_var  <- nrow(dosage_mat)
+  n_samp <- ncol(dosage_mat)
+  gt_map <- c("0/0", "0/1", "1/1")
+
+  header <- c(
+    "##fileformat=VCFv4.1",
+    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+    paste0('##FORMAT=<ID=DS,Number=1,Type=Float,',
+           'Description="Ancestry-specific dosage of the alternate allele">'),
+    paste(c("#CHROM", "POS", "ID", "REF", "ALT",
+            "QUAL", "FILTER", "INFO", "FORMAT", sample_ids),
+          collapse = "\t")
+  )
+
+  data_lines <- vapply(seq_len(n_var), function(i) {
+    ds        <- dosage_mat[i, ]
+    gt_idx    <- pmin(2L, pmax(0L, as.integer(round(ds))))
+    gt_str    <- gt_map[gt_idx + 1L]
+    samp_flds <- paste0(gt_str, ":", sprintf("%.4f", ds))
+    paste(c(chrom, positions[i], ".", ref[i], alt[i],
+            ".", "PASS", ".", "GT:DS", samp_flds),
+          collapse = "\t")
+  }, character(1L))
+
+  writeLines(c(header, data_lines), path)
+}
+```
+
+```{r create-gds, message=FALSE}
+library(SeqArray)
+
+# Variant metadata matching our simulated positions
+positions <- seq(1e6, by = 500, length.out = N_VAR)
+ref_allele <- rep("A", N_VAR)
+alt_allele <- rep("T", N_VAR)
+
+# Create temporary VCF → GDS for each ancestry
+vcf_afr <- tempfile(fileext = ".vcf")
+vcf_eur <- tempfile(fileext = ".vcf")
+gds_afr <- tempfile(fileext = ".gds")
+gds_eur <- tempfile(fileext = ".gds")
+
+write_ds_vcf(vcf_afr, ds_afr, samp_id, CHROM, positions, ref_allele, alt_allele)
+write_ds_vcf(vcf_eur, ds_eur, samp_id, CHROM, positions, ref_allele, alt_allele)
+
+seqVCF2GDS(vcf_afr, gds_afr, verbose = FALSE)
+seqVCF2GDS(vcf_eur, gds_eur, verbose = FALSE)
+
+cat("GDS files created:\n", gds_afr, "\n", gds_eur, "\n")
+```
+
+---
+
+## 3  Gene-group file
+
+SMMAT looks up variants per gene from a tab-delimited file with no header:
+
+```
+gene_name   chrom   pos   ref   alt   weight
+```
+
+The `weight` column is typically 1 (unweighted burden) or a function of MAF
+(e.g. Beta(1,25) weights).
+
+```{r gene-group}
+gene_group_file <- tempfile(fileext = ".tsv")
+gene_df <- data.frame(
+  gene  = GENE,
+  chr   = CHROM,
+  pos   = positions,
+  ref   = ref_allele,
+  alt   = alt_allele,
+  weight = 1
+)
+write.table(gene_df, gene_group_file,
+            sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+cat("Gene-group file (first 3 rows):\n")
+head(read.table(gene_group_file, sep = "\t"), 3)
+```
+
+---
+
+## 4  Fitting the null model
+
+The null mixed model is fit **once** and reused for all three SMMAT calls:
+
+```{r null-model, eval=FALSE}
+library(GMMAT)
+
+# glmmkin: logistic GLMM for case/control phenotype
+# For a continuous trait use family = gaussian(link = "identity")
+model0 <- glmmkin(
+  y ~ 1,
+  data   = df_pheno,
+  kins   = Kmat,
+  id     = "id",
+  family = binomial(link = "logit")
+)
+```
+
+> **Note**: GMMAT >= 1.4 is required.  In real analyses the kinship matrix
+> (`kins`) is a sparse relatedness matrix estimated from genotype data; here
+> we pass the identity matrix to assume independence.
+
+---
+
+## 5  Running SMMAT gene-level tests
+
+```{r smmat-run, eval=FALSE}
+run_smmat <- function(gds_file, is_dosage) {
+  SMMAT(
+    model0,
+    gds.fn      = gds_file,
+    group.file  = gene_group_file,
+    MAF.range   = c(0, 0.05),  # rare variants only (MAF < 5%)
+    miss.cutoff = 1,            # keep all variants
+    method      = "davies",     # numerical integration for p-values
+    is.dosage   = is_dosage,    # TRUE for ancestry-specific dosage
+    ncores      = 1L
+  )
+}
+
+res_aa  <- run_smmat(gds_afr, is_dosage = TRUE)
+res_ee  <- run_smmat(gds_eur, is_dosage = TRUE)
+res_obs <- run_smmat(gds_obs, is_dosage = FALSE)  # raw unphased GT
+```
+
+Each result is a data.frame with one row per gene and columns:
+`gene`, `N.variant`, `N.sample`, `B`, `B.var`, `Q_B`, `p_B`, `Q_S`, `p_S`,
+`p_SMMAT` (the primary omnibus p-value).
+
+---
+
+## 6  Interpreting and combining results
+
+```{r smmat-combine, eval=FALSE}
+# Bind AA / EE / observed into a single data.frame for the gene
+combined <- data.frame(
+  gene     = res_aa$gene,
+  p_aa     = res_aa$p_SMMAT,
+  p_ee     = res_ee$p_SMMAT,
+  p_obs    = res_obs$p_SMMAT
+)
+
+# Cauchy combination of AA and EE p-values into a multi-ancestry p-value
+cauchy_p <- function(p1, p2) {
+  # Han & Liu (2020) Cauchy combination test
+  T_stat <- 0.5 * (tan((0.5 - p1) * pi) + tan((0.5 - p2) * pi))
+  pcauchy(T_stat, lower.tail = FALSE)
+}
+
+combined$p_cauchy <- mapply(cauchy_p, combined$p_aa, combined$p_ee)
+
+print(combined)
+```
+
+A significant `p_cauchy` with `p_aa` and/or `p_ee` more extreme than
+`p_obs` suggests the signal is ancestry-specific — the key LANTERN finding.
+
+---
+
+## 7  Cleanup
+
+```{r cleanup}
+unlink(c(vcf_afr, vcf_eur, gds_afr, gds_eur, gene_group_file))
+```
+
+---
+
+## 8  End-to-end workflow diagram
+
+```
+Phased VCF + RFMix MSP
+         │
+         ▼
+  run_phased_pipeline()
+         │
+    ┌────┴────┐
+    │         │
+african_ds.gds  european_ds.gds
+    │         │
+    └────┬────┘
+         │
+    glmmkin()  ← phenotype + kinship
+         │
+    ┌────┼────┐
+    │    │    │
+ SMMAT SMMAT SMMAT
+  AA    EE   obs
+    │    │
+  Cauchy combination
+         │
+  gene-level p-value
+```
+
+See `vignette("vcf-splitting")` for the first step of this workflow.

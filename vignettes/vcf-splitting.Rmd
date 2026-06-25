@@ -1,0 +1,246 @@
+---
+title: "Splitting genotypes by local ancestry"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Splitting genotypes by local ancestry}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(lantern)
+```
+
+## Overview
+
+LANTERN splits variant dosages by local ancestry so that downstream
+association tests can be run separately on the African (AA) and European
+(EE) haplotype backgrounds of admixed individuals.
+
+Two input modes are supported:
+
+| Mode | Input | Key function |
+|------|-------|-------------|
+| **Unphased** | Genotype matrix + per-variant ancestry code | `split_by_ancestry()` / `run_ancestry_pipeline()` |
+| **Phased** | Per-haplotype GT + per-haplotype ancestry | `split_phased()` / `run_phased_pipeline()` |
+
+---
+
+## 1  Unphased splitting
+
+### 1.1  Anatomy of the input matrices
+
+`split_by_ancestry()` takes two matrices of identical dimensions:
+
+* **`gt_genotype`** — integer matrix, rows = variants, cols = samples.
+  Values: 0 (hom-ref), 1 (het), 2 (hom-alt).
+* **`ancestry`** — integer matrix, same shape.
+  Ancestry codes: **1** = EUR/EUR, **2** = AFR/EUR (mixed het), **3** = AFR/AFR.
+
+The ancestry code summarises *both* haplotypes at the locus (e.g. from an
+RFMix MSP file collapsed into a per-variant diploid code).
+
+### 1.2  Minimal working example
+
+```{r unphased-basic}
+set.seed(42)
+n_var  <- 10   # variants
+n_samp <- 6    # samples
+
+# Simulate integer genotypes (0/1/2)
+gt <- matrix(
+  sample(0:2, n_var * n_samp, replace = TRUE, prob = c(0.6, 0.3, 0.1)),
+  nrow = n_var, ncol = n_samp
+)
+rownames(gt) <- paste0("var", seq_len(n_var))
+colnames(gt) <- paste0("S", seq_len(n_samp))
+
+# Simulate ancestry codes (1=EUR, 2=MIX, 3=AFR)
+anc <- matrix(
+  sample(1:3, n_var * n_samp, replace = TRUE, prob = c(0.4, 0.2, 0.4)),
+  nrow = n_var, ncol = n_samp
+)
+
+result <- split_by_ancestry(gt, anc)
+```
+
+```{r unphased-inspect}
+cat("African dosage (first 4 variants × 6 samples):\n")
+round(result$african[1:4, ], 2)
+
+cat("\nEuropean dosage (first 4 variants × 6 samples):\n")
+round(result$european[1:4, ], 2)
+```
+
+### 1.3  How the split works
+
+For each variant the function computes ancestry-specific proportions
+**p1** (African) and **p2** (European) from the diploid counts across all
+samples:
+
+```
+p1 = (2·N_AA_hom + N_AA_het + N_MIX_hom) / denominator
+p2 = (N_MIX_hom + 2·N_EUR_hom + N_EUR_het) / denominator
+```
+
+where `denominator = total_alt_alleles − N_MIX_het` (mixed-het samples
+are assigned stochastically via p1/p2 rather than excluded from the
+denominator).
+
+**Singleton edge-case**: when *all* alt alleles are carried by mixed-het
+individuals, p1 = p2 = 0.5 to avoid dividing by zero.
+
+```{r unphased-edge}
+# A variant where only mixed-het (code 2) samples carry the alt allele
+gt_edge  <- matrix(c(1L, 0L, 1L), nrow = 1)   # three samples: het, ref, het
+anc_edge <- matrix(c(2L, 1L, 2L), nrow = 1)   # all alt carriers are MIX
+
+r <- split_by_ancestry(gt_edge, anc_edge)
+cat("Singleton MIX case — p1 = p2 = 0.5\n")
+cat("African: ", r$african, "\nEuropean:", r$european, "\n")
+```
+
+### 1.4  High-level pipeline (`run_ancestry_pipeline`)
+
+`run_ancestry_pipeline()` wraps the splitting in a full pipeline that
+handles sample/variant overlap, monomorphic filtering, and optional VCF
+output.  Its inputs are:
+
+* **`gt_matrix`**: variant × sample genotype matrix (rownames = variant IDs,
+  colnames = sample IDs).
+* **`pt_matrix`**: sample × region ancestry matrix (rownames = sample IDs,
+  colnames match variant IDs or genomic region strings).
+
+```{r pipeline}
+set.seed(7)
+n_v <- 15; n_s <- 8
+
+gt_full <- matrix(
+  sample(0:2, n_v * n_s, replace = TRUE, prob = c(0.6, 0.3, 0.1)),
+  nrow = n_v, ncol = n_s,
+  dimnames = list(
+    paste0("chr1:", 1000 * seq_len(n_v)),   # rownames: variant positions
+    paste0("samp_", seq_len(n_s))            # colnames: sample IDs
+  )
+)
+
+# PT matrix: rows = samples, cols = same variant IDs
+pt_full <- matrix(
+  sample(1:3, n_s * n_v, replace = TRUE, prob = c(0.35, 0.3, 0.35)),
+  nrow = n_s, ncol = n_v,
+  dimnames = list(
+    paste0("samp_", seq_len(n_s)),
+    paste0("chr1:", 1000 * seq_len(n_v))
+  )
+)
+
+out <- run_ancestry_pipeline(gt_full, pt_full, verbose = FALSE)
+
+cat("African matrix: ", nrow(out$african), "variants ×",
+    ncol(out$african), "samples\n")
+cat("European matrix:", nrow(out$european), "variants ×",
+    ncol(out$european), "samples\n")
+cat("Variants kept:", out$overlap$n_variants_kept, "of",
+    out$overlap$n_variants_total, "\n")
+```
+
+---
+
+## 2  Phased splitting
+
+When RFMix (or equivalent) provides **per-haplotype** local ancestry
+calls, LANTERN can deterministically assign each haplotype's allele to the
+correct ancestry background — no probabilistic splitting needed.
+
+### 2.1  Core function: `split_phased()`
+
+Inputs are four matrices of the same shape (variants × samples):
+
+| Argument | Description |
+|----------|-------------|
+| `gt_hap0` | integer 0/1 allele for haplotype 0 |
+| `gt_hap1` | integer 0/1 allele for haplotype 1 |
+| `anc_hap0` | ancestry code for haplotype 0 |
+| `anc_hap1` | ancestry code for haplotype 1 |
+| `pop_codes` | named vector mapping `c(AFR=0L, EUR=1L)` (RFMix default) |
+
+```{r phased-basic}
+# 3 variants × 4 samples
+gt0 <- matrix(c(1L, 0L, 1L,   # variant 1: hap0 alleles for 3 samples
+                0L, 1L, 0L,   # variant 2
+                1L, 1L, 0L),  # variant 3
+              nrow = 3, ncol = 3)
+
+gt1 <- matrix(c(0L, 1L, 0L,
+                1L, 0L, 1L,
+                0L, 1L, 1L),
+              nrow = 3, ncol = 3)
+
+# Haplotype ancestry: 0 = AFR, 1 = EUR  (RFMix convention)
+a0 <- matrix(c(0L, 0L, 1L,
+               1L, 0L, 0L,
+               0L, 1L, 0L),
+             nrow = 3, ncol = 3)
+
+a1 <- matrix(c(1L, 1L, 0L,
+               0L, 1L, 1L,
+               1L, 0L, 1L),
+             nrow = 3, ncol = 3)
+
+phased_result <- split_phased(gt0, gt1, a0, a1)
+
+cat("African dosage (phased):\n"); print(phased_result$african)
+cat("European dosage (phased):\n"); print(phased_result$european)
+```
+
+The rule is simple: for each cell, hap0 contributes its allele to the AFR
+count if `anc_hap0 == 0`, to EUR if `anc_hap0 == 1`, and nothing
+otherwise.  Same for hap1.
+
+### 2.2  Full pipeline (`run_phased_pipeline`)
+
+`run_phased_pipeline()` orchestrates the complete workflow from raw files:
+
+1. Parse the RFMix MSP file (ancestry tracts).
+2. Query sample IDs from the VCF via `bcftools`.
+3. Intersect samples between VCF and MSP.
+4. Parse phased GT strings from VCF output.
+5. Map each variant to its ancestry tract with `findInterval()`.
+6. Broadcast tract-level ancestry to variant level.
+7. Call `split_phased()` via the C backend.
+8. Filter monomorphic variants.
+9. Optionally write ancestry-specific VCFs with a DS (dosage) field
+   and convert them to GDS format.
+
+```{r phased-pipeline, eval=FALSE}
+# Requires bcftools in PATH and real phased VCF + MSP files
+result <- run_phased_pipeline(
+  vcf_path = "data/chr19.phased.bcf",
+  msp_path = "data/chr19.msp.tsv.gz",
+  out_path  = "output/phased/",
+  chrom     = "chr19",
+  write_vcf = TRUE,
+  verbose   = TRUE
+)
+
+# result$african  — dosage matrix, rows=variants, cols=samples
+# result$european — dosage matrix
+# result$variant_info — data.frame: chrom, pos, ref, alt
+# result$vcf_paths    — paths to african_ds.vcf, european_ds.vcf, *.gds
+```
+
+The output `african_ds.gds` / `european_ds.gds` files are the primary
+input for the downstream gene-level tests (see `vignette("gene-level-test")`).
+
+---
+
+## 3  Choosing between unphased and phased
+
+| | Unphased | Phased |
+|---|---|---|
+| **Ancestry input** | Diploid per-variant code (1/2/3) | Per-haplotype code from RFMix MSP |
+| **Splitting rule** | Probabilistic (p1/p2 proportions) | Deterministic |
+| **Accuracy** | Good for intermediate-frequency variants | Better for rare variants |
+| **Required tools** | None (pure R + C) | `bcftools` for VCF parsing |
+| **Recommended for** | Unphased cohort data | Phased TOPMed/1000G data |

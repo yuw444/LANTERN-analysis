@@ -2,21 +2,28 @@ Package: lantern
 Type: Package
 Title: Ancestry-Specific Rare Variant Association Analysis
 Version: 0.1.0
-Authors@R: 
-    person(given = "First",
-           family = "Last",
+Authors@R:
+    person(given = "Yu",
+           family = "Wang",
            role = c("aut", "cre"),
-           email = "author@example.com")
-Description: R package for ancestry-specific rare variant association 
-    analysis with pure C backend for performance-critical operations.
-License: MIT
+           email = "wangyu19940804@gmail.com")
+Description: Ancestry-specific rare variant burden testing for admixed
+    populations. Uses a pure C backend to split genotype dosages by local
+    ancestry inferred from phased or unphased data, then runs
+    ancestry-stratified SMMAT gene-level tests via GMMAT.
+License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
-Imports: 
+LazyData: false
+Imports:
     data.table,
-    dplyr,
     SeqArray,
     SeqVarTools
-RoxygenNote: 7.3.2
-Suggests: 
+Suggests:
+    dplyr,
+    GMMAT,
+    knitr,
+    rmarkdown,
     testthat (>= 3.0.0)
+VignetteBuilder: knitr
+RoxygenNote: 7.3.2
+Config/testthat/edition: 3
