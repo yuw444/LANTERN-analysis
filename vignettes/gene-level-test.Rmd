@@ -115,7 +115,7 @@ write_ds_vcf <- function(path, dosage_mat, sample_ids,
     gt_idx    <- pmin(2L, pmax(0L, as.integer(round(ds))))
     gt_str    <- gt_map[gt_idx + 1L]
     samp_flds <- paste0(gt_str, ":", sprintf("%.4f", ds))
-    paste(c(chrom, positions[i], ".", ref[i], alt[i],
+    paste(c(chrom, sprintf("%d", as.integer(positions[i])), ".", ref[i], alt[i],
             ".", "PASS", ".", "GT:DS", samp_flds),
           collapse = "\t")
   }, character(1L))
@@ -128,7 +128,7 @@ write_ds_vcf <- function(path, dosage_mat, sample_ids,
 library(SeqArray)
 
 # Variant metadata matching our simulated positions
-positions <- seq(1e6, by = 500, length.out = N_VAR)
+positions <- seq(1000000L, by = 500L, length.out = N_VAR)
 ref_allele <- rep("A", N_VAR)
 alt_allele <- rep("T", N_VAR)
 
