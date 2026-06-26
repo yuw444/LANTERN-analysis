@@ -65,14 +65,14 @@ test_that("run_ancestry_pipeline returns correct counts", {
 })
 
 test_that("run_ancestry_pipeline handles unnamed matrices", {
-  # Unnamed matrices - should match by order
+  # Unnamed matrices - positional matching by order
   gt <- matrix(c(2, 1, 0, 1, 2, 1), nrow = 2, ncol = 3)
   pt <- matrix(c(3, 2, 1, 3, 2, 1), nrow = 3, ncol = 2)
 
-  expect_warning(result <- run_ancestry_pipeline(gt, pt, verbose = FALSE),
-                 "different dimensions")
+  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
 
   expect_equal(result$overlap$n_samples_kept, 3)
+  expect_equal(result$overlap$n_variants_kept, 2)
 })
 
 test_that("run_ancestry_pipeline stops on no common samples", {
@@ -102,7 +102,7 @@ test_that("result contains all expected elements", {
 
 test_that("run_ancestry_pipeline filters monomorphic variants", {
   # GT: var1 has alt alleles, var2 is monomorphic (all 0)
-  gt <- matrix(c(2, 1, 0, 0, 0, 0), nrow = 2, ncol = 3,
+  gt <- matrix(c(2, 0, 0, 0, 0, 0), nrow = 2, ncol = 3,
                dimnames = list(c("var1", "var2"),
                                c("s1", "s2", "s3")))
 

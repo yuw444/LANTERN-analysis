@@ -12,6 +12,9 @@
 #'
 #' @docType package
 #' @name lantern-package
+#' @useDynLib lantern, .registration = TRUE
+#' @importFrom utils head
+#' @importFrom stats median
 NULL
 
 # ============================================================================

@@ -11,13 +11,13 @@ Description: Ancestry-specific rare variant burden testing for admixed
     populations. Uses a pure C backend to split genotype dosages by local
     ancestry inferred from phased or unphased data, then runs
     ancestry-stratified SMMAT gene-level tests via GMMAT.
+URL: https://yuw444.github.io/LANTERN/, https://github.com/yuw444/LANTERN
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: false
 Imports:
     data.table,
-    SeqArray,
-    SeqVarTools
+    SeqArray
 Suggests:
     dplyr,
     GMMAT,
@@ -26,5 +26,5 @@ Suggests:
     rmarkdown,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
-RoxygenNote: 7.3.2
 Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0

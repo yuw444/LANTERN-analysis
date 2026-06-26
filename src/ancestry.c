@@ -172,7 +172,10 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sa
     if (!fp) error("Cannot open bed file: %s", bed);
     
     unsigned char magic[3];
-    fread(magic, 1, 3, fp);
+    if (fread(magic, 1, 3, fp) != 3) {
+        fclose(fp);
+        error("Cannot read bed file header");
+    }
     if (magic[0] != 0x6c || magic[1] != 0x1b || magic[2] != 0x01) {
         fclose(fp);
         error("Invalid bed file format");
@@ -202,7 +205,10 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sa
     
     for (int v = 0; v < n_variants; v++) {
         unsigned char buffer[store_size];
-        fread(buffer, 1, store_size, fp);
+        if (fread(buffer, 1, store_size, fp) != (size_t)store_size) {
+            fclose(fp);
+            error("Truncated bed file at variant %d", v);
+        }
         
         for (int s = 0; s < n_samples; s++) {
             int byte_idx = s / 4;
@@ -279,35 +285,35 @@ static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancest
             double ds_afr, ds_eur;
             
             if (an == 3) {
-                sprintf(gt_afr, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
-                sprintf(gt_eur, "0/0");
+                snprintf(gt_afr, 20, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
+                snprintf(gt_eur, 20, "0/0");
                 ds_afr = gt > 0 ? (gt > 1 ? 2.0 : 1.0) : 0.0;
                 ds_eur = 0.0;
             } else if (an == 1) {
-                sprintf(gt_afr, "0/0");
-                sprintf(gt_eur, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
+                snprintf(gt_afr, 20, "0/0");
+                snprintf(gt_eur, 20, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
                 ds_afr = 0.0;
                 ds_eur = gt > 0 ? (gt > 1 ? 2.0 : 1.0) : 0.0;
             } else if (an == 2) {
                 if (gt == 2) {
-                    sprintf(gt_afr, "1/0");
-                    sprintf(gt_eur, "0/1");
+                    snprintf(gt_afr, 20, "1/0");
+                    snprintf(gt_eur, 20, "0/1");
                     ds_afr = 1.0;
                     ds_eur = 1.0;
                 } else if (gt == 1) {
-                    sprintf(gt_afr, "0/1");
-                    sprintf(gt_eur, "0/1");
+                    snprintf(gt_afr, 20, "0/1");
+                    snprintf(gt_eur, 20, "0/1");
                     ds_afr = 0.5;
                     ds_eur = 0.5;
                 } else {
-                    sprintf(gt_afr, "0/0");
-                    sprintf(gt_eur, "0/0");
+                    snprintf(gt_afr, 20, "0/0");
+                    snprintf(gt_eur, 20, "0/0");
                     ds_afr = 0.0;
                     ds_eur = 0.0;
                 }
             } else {
-                sprintf(gt_afr, "0/0");
-                sprintf(gt_eur, "0/0");
+                snprintf(gt_afr, 20, "0/0");
+                snprintf(gt_eur, 20, "0/0");
                 ds_afr = 0.0;
                 ds_eur = 0.0;
             }

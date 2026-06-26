@@ -37,8 +37,12 @@ test_that("split_by_ancestry handles pure ancestries", {
   
   result <- split_by_ancestry(gt, an)
   
-  expect_equal(result$african[1, 1], 2)
+  # var1, s1: gt=1, anc=3 (pure AFR) → african=1, european=0
+  expect_equal(result$african[1, 1], 1)
   expect_equal(result$european[1, 1], 0)
+  # var1, s2: gt=2, anc=1 (pure EUR) → african=0, european=2
+  expect_equal(result$african[1, 2], 0)
+  expect_equal(result$european[1, 2], 2)
   expect_equal(result$african[2, 1], 0)
   expect_equal(result$european[2, 1], 0)
 })

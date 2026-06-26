@@ -21,8 +21,6 @@
 #'   Values: 1=EUR/EUR, 2=AFR/EUR (mixed), 3=AFR/AFR
 #'   rownames: sample IDs (must match colnames of gt_matrix)
 #'   colnames: region IDs (e.g., "chr:start-end")
-#' @param vcf_path Input VCF path (optional, for coordinate-based variant matching)
-#' @param out_prefix Output file prefix for VCFs (optional)
 #' @param verbose Print progress messages (default TRUE)
 #'
 #' @return List with elements:
@@ -46,10 +44,7 @@
 #' # Only chr1:100 and chr1:200 that overlap regions are kept
 #'
 #' @export
-run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
-                                  vcf_path = NULL,
-                                  out_prefix = NULL,
-                                  verbose = TRUE) {
+run_ancestry_pipeline <- function(gt_matrix, pt_matrix, verbose = TRUE) {
 
   if (verbose) message("=== LANTERN Ancestry Pipeline ===\n")
 
@@ -126,7 +121,7 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
               n_pt, " cols). Using first ", min_n, " variants.")
     }
     gt_var_names <- paste0("var_", 1:min_n)
-    pt_region_names <- paste0("region_", 1:min_n)
+    pt_region_names <- paste0("var_", 1:min_n)
     rownames(gt_matrix) <- gt_var_names
     colnames(pt_matrix) <- pt_region_names
   }
@@ -313,24 +308,6 @@ run_ancestry_pipeline <- function(gt_matrix, pt_matrix,
     message("  -> African (3): median = ", median(counts$african))
     message("  -> European (1): median = ", median(counts$european))
     message("  -> Mixed (2): median = ", median(counts$mixed))
-  }
-
-  # ========================================================================
-  # Step 7: Write VCFs if requested
-  # ========================================================================
-  if (!is.null(vcf_path) && !is.null(out_prefix)) {
-    if (verbose) message("\nStep 6: Writing ancestry-specific VCFs...")
-
-    .write_vcf_with_ancestry(
-      vcf_path, result$african, result$european, pt_subset,
-      paste0(out_prefix, "_african.vcf"),
-      paste0(out_prefix, "_european.vcf")
-    )
-
-    if (verbose) {
-      message("  -> African: ", out_prefix, "_african.vcf")
-      message("  -> European: ", out_prefix, "_european.vcf")
-    }
   }
 
   if (verbose) message("\n=== Pipeline Complete ===\n")

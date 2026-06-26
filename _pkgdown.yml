@@ -1,4 +1,4 @@
-url: ~   # set to https://<user>.github.io/<repo>/ once GitHub Pages is enabled
+url: https://yuw444.github.io/LANTERN/
 
 template:
   bootstrap: 5
@@ -17,7 +17,8 @@ navbar:
     right: [github]
   components:
     github:
-      icon: fab fa-github
+      icon: "fab fa-github fa-lg"
+      aria-label: "GitHub"
       href: https://github.com/yuw444/LANTERN
 
 articles:

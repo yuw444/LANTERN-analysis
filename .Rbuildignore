@@ -1,0 +1,6 @@
+^src/AGENTS\.md$
+^docs$
+^lantern\.Rcheck$
+^.*\.tar\.gz$
+^.*\.Rproj$
+^\.github$

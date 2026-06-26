@@ -53,7 +53,7 @@ split_phased <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #'
 #' Parse the RFMix MSP (local ancestry tract) file into ancestry matrices.
 #' MSP format: two header lines followed by data rows.
-#' Line 1: population codes (e.g., "#Subpopulation order/codes: AFR=0\tEUR=1").
+#' Line 1: population codes (e.g., "#Subpopulation order/codes: AFR=0  EUR=1").
 #' Line 2: column headers.
 #' Data rows: ancestry calls per haplotype per tract.
 #'
