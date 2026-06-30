@@ -385,6 +385,154 @@ static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP en
 }
 
 // ============================================================================
+// split_by_ancestry_multi: K-population unphased dosage splitting
+// ============================================================================
+//
+// Algorithm (per variant row):
+//   Step 1 — estimate population proportions p[k] from unambiguous observations:
+//     * pure pop k, gt=2 → num[k] += 2, D += 2
+//     * pure pop k, gt=1 → num[k] += 1, D += 1
+//     * mixed pair (a,b), gt=2 → num[a] += 1, num[b] += 1, D += 2
+//     * mixed pair (a,b), gt=1 → excluded (ambiguous)
+//     p[k] = num[k] / D    (if D==0, all p[k]=0; handled per-pair below)
+//
+//   Step 2 — assign dosages:
+//     * pure pop k, gt=g  → out[k] = g
+//     * mixed (a,b), gt=2 → out[a] = 1, out[b] = 1
+//     * mixed (a,b), gt=1 → out[a] = p[a]/(p[a]+p[b]), out[b] = p[b]/(p[a]+p[b])
+//                           (singleton fallback: 0.5/0.5 when p[a]+p[b]==0)
+//     * unknown code or gt=0 → 0
+//
+// Arguments:
+//   gt          int matrix nrow×ncol, values 0/1/2
+//   ancestry    int matrix nrow×ncol, same dims
+//   pure_codes  int vector length K: pure-ancestry code for each population
+//   m_code      int vector length M: mixed-ancestry codes
+//   m_pop1      int vector length M: 0-based index of parent pop 1 in pure_codes
+//   m_pop2      int vector length M: 0-based index of parent pop 2 in pure_codes
+static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
+                                        SEXP pure_codes,
+                                        SEXP m_code, SEXP m_pop1, SEXP m_pop2) {
+    int K = length(pure_codes);
+    int M = length(m_code);
+    int *pure = INTEGER(pure_codes);
+    int *mc   = INTEGER(m_code);
+    int *mp1  = INTEGER(m_pop1);
+    int *mp2  = INTEGER(m_pop2);
+
+    SEXP dim  = PROTECT(getAttrib(gt, R_DimSymbol));
+    int nrow  = INTEGER(dim)[0];   /* variants */
+    int ncol  = INTEGER(dim)[1];   /* samples  */
+    int n     = nrow * ncol;
+
+    SEXP gt_i  = PROTECT(coerceVector(gt,       INTSXP));
+    SEXP anc_i = PROTECT(coerceVector(ancestry, INTSXP));
+    int *gp    = INTEGER(gt_i);
+    int *ap    = INTEGER(anc_i);
+
+    /* Allocate K output matrices */
+    SEXP result = PROTECT(allocVector(VECSXP, K));
+    for (int p = 0; p < K; p++) {
+        SEXP mat = PROTECT(allocMatrix(REALSXP, nrow, ncol));
+        memset(REAL(mat), 0, n * sizeof(double));
+        SET_VECTOR_ELT(result, p, mat);
+        UNPROTECT(1);   /* protected via result */
+    }
+    double **out = (double **) R_alloc(K, sizeof(double *));
+    for (int p = 0; p < K; p++)
+        out[p] = REAL(VECTOR_ELT(result, p));
+
+    /* Per-variant working buffers (freed automatically by R_alloc) */
+    double *num = (double *) R_alloc(K, sizeof(double));
+    double *pk  = (double *) R_alloc(K, sizeof(double));
+
+    for (int i = 0; i < nrow; i++) {
+
+        /* -- Step 1: accumulate unambiguous alt allele counts -- */
+        double D = 0.0;
+        memset(num, 0, K * sizeof(double));
+
+        for (int j = 0; j < ncol; j++) {
+            int g = gp[i + nrow * j];
+            int a = ap[i + nrow * j];
+            if (g == 0) continue;
+
+            /* pure ancestry */
+            int hit = 0;
+            for (int p = 0; p < K; p++) {
+                if (a == pure[p]) {
+                    num[p] += g;  D += g;
+                    hit = 1;  break;
+                }
+            }
+            if (hit) continue;
+
+            /* mixed ancestry — only hom-alts inform p[k] */
+            if (g == 2) {
+                for (int m = 0; m < M; m++) {
+                    if (a == mc[m]) {
+                        num[mp1[m]] += 1.0;
+                        num[mp2[m]] += 1.0;
+                        D           += 2.0;
+                        break;
+                    }
+                }
+            }
+            /* mixed gt==1: ambiguous, excluded from Step 1 */
+        }
+
+        /* -- Compute p[k] -- */
+        if (D > 0.0)
+            for (int p = 0; p < K; p++) pk[p] = num[p] / D;
+        else
+            memset(pk, 0, K * sizeof(double));  /* singleton case handled per-pair */
+
+        /* -- Step 2: assign dosages -- */
+        for (int j = 0; j < ncol; j++) {
+            int g   = gp[i + nrow * j];
+            int a   = ap[i + nrow * j];
+            int idx = i + nrow * j;
+            if (g == 0) continue;
+
+            /* pure ancestry */
+            int hit = 0;
+            for (int p = 0; p < K; p++) {
+                if (a == pure[p]) {
+                    out[p][idx] = (double) g;
+                    hit = 1;  break;
+                }
+            }
+            if (hit) continue;
+
+            /* mixed ancestry */
+            for (int m = 0; m < M; m++) {
+                if (a == mc[m]) {
+                    int pa = mp1[m], pb = mp2[m];
+                    if (g == 2) {
+                        out[pa][idx] = 1.0;
+                        out[pb][idx] = 1.0;
+                    } else {    /* g == 1: ambiguous het */
+                        double sum_ab = pk[pa] + pk[pb];
+                        if (sum_ab > 0.0) {
+                            out[pa][idx] = pk[pa] / sum_ab;
+                            out[pb][idx] = pk[pb] / sum_ab;
+                        } else {
+                            out[pa][idx] = 0.5;   /* singleton fallback */
+                            out[pb][idx] = 0.5;
+                        }
+                    }
+                    break;
+                }
+            }
+            /* unknown ancestry code: leave as 0 */
+        }
+    }
+
+    UNPROTECT(4);   /* dim, gt_i, anc_i, result */
+    return result;
+}
+
+// ============================================================================
 // split_phased_by_ancestry: Deterministic split using per-haplotype ancestry
 // ============================================================================
 // Each haplotype contributes its allele to whichever ancestry population it
@@ -545,6 +693,12 @@ SEXP subset_vcf_by_range(SEXP vcf_path, SEXP chrom, SEXP start, SEXP end, SEXP o
 SEXP split_phased_multi(SEXP gt_hap0, SEXP gt_hap1,
                          SEXP anc_hap0, SEXP anc_hap1, SEXP pop_codes) {
     return split_phased_multi_c(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes);
+}
+
+SEXP split_by_ancestry_multi(SEXP gt, SEXP ancestry, SEXP pure_codes,
+                               SEXP m_code, SEXP m_pop1, SEXP m_pop2) {
+    return split_by_ancestry_multi_c(gt, ancestry, pure_codes,
+                                     m_code, m_pop1, m_pop2);
 }
 
 SEXP split_phased_by_ancestry(SEXP gt_hap0, SEXP gt_hap1,

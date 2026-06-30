@@ -105,6 +105,90 @@ split_by_ancestry <- function(gt_genotype, ancestry) {
     .split_by_ancestry(gt_genotype, ancestry)
 }
 
+#' Split unphased genotype matrix by ancestry for K populations
+#'
+#' Generalises \code{\link{split_by_ancestry}} to an arbitrary number of
+#' ancestries.  For each variant, population allele proportions
+#' \eqn{p_1, \ldots, p_K} (summing to 1) are estimated from samples with
+#' unambiguous ancestry (pure-ancestry homozygotes and heterozygotes, plus
+#' mixed hom-alts which each contribute one allele to each parent pool).
+#' Ambiguous heterozygotes in each mixed pair are then split by the
+#' conditional pairwise ratio \eqn{p_i / (p_i + p_j)}.
+#' When no unambiguous alt alleles exist for a pair (singleton edge case),
+#' the split defaults to 0.5 / 0.5.
+#'
+#' @param gt_genotype Integer matrix (variants x samples) of genotypes (0/1/2).
+#' @param ancestry Integer matrix (variants x samples) of ancestry codes,
+#'   same dimensions as \code{gt_genotype}.
+#' @param pure_codes Named integer vector mapping each population label to its
+#'   pure-ancestry diploid code.
+#'   Example: \code{c(AFR = 3L, EUR = 1L, NAT = 4L)}.
+#' @param mixed_codes Data frame with three columns:
+#'   \describe{
+#'     \item{code}{Integer ancestry code for this mixed pair.}
+#'     \item{pop1}{Character name of the first parent population
+#'       (must be a name in \code{pure_codes}).}
+#'     \item{pop2}{Character name of the second parent population
+#'       (must be a name in \code{pure_codes}).}
+#'   }
+#'   One row per mixed-ancestry diploid type.
+#'   Example for 3 populations:
+#'   \code{data.frame(code=c(2L,5L,6L), pop1=c("AFR","AFR","EUR"), pop2=c("EUR","NAT","NAT"))}
+#'
+#' @return Named list of K numeric matrices (variants x samples), one per
+#'   population in \code{pure_codes}, in the same order.  Each element is
+#'   named after the corresponding entry in \code{pure_codes}.
+#'
+#' @seealso \code{\link{split_by_ancestry}} for the hardcoded 2-population
+#'   (AFR + EUR) wrapper; \code{\link{split_phased_multi}} for the phased
+#'   K-population analogue.
+#'
+#' @examples
+#' # 3-population example: AFR=3, EUR=1, NAT=4; mixed codes 2/5/6
+#' set.seed(1)
+#' gt  <- matrix(sample(0:2, 20, replace = TRUE, prob = c(.8,.15,.05)),
+#'               nrow = 4, ncol = 5)
+#' # ancestry codes: 3=AFR/AFR, 1=EUR/EUR, 4=NAT/NAT,
+#' #                 2=AFR/EUR, 5=AFR/NAT, 6=EUR/NAT
+#' anc <- matrix(sample(c(1L,2L,3L,4L,5L,6L), 20, replace = TRUE),
+#'               nrow = 4, ncol = 5)
+#' pure  <- c(AFR = 3L, EUR = 1L, NAT = 4L)
+#' mixed <- data.frame(code = c(2L, 5L, 6L),
+#'                     pop1 = c("AFR", "AFR", "EUR"),
+#'                     pop2 = c("EUR", "NAT", "NAT"))
+#' out <- split_by_ancestry_multi(gt, anc, pure, mixed)
+#' names(out)   # "AFR" "EUR" "NAT"
+#'
+#' @export
+split_by_ancestry_multi <- function(gt_genotype, ancestry,
+                                     pure_codes, mixed_codes) {
+    if (is.null(names(pure_codes)))
+        stop("pure_codes must be a named integer vector, e.g. c(AFR=3L, EUR=1L)")
+    if (!is.data.frame(mixed_codes) ||
+        !all(c("code", "pop1", "pop2") %in% names(mixed_codes)))
+        stop("mixed_codes must be a data.frame with columns: code, pop1, pop2")
+    pop_names <- names(pure_codes)
+    bad <- setdiff(c(mixed_codes$pop1, mixed_codes$pop2), pop_names)
+    if (length(bad))
+        stop("mixed_codes references populations not in pure_codes: ",
+             paste(bad, collapse = ", "))
+
+    storage.mode(gt_genotype) <- "integer"
+    storage.mode(ancestry)    <- "integer"
+    storage.mode(pure_codes)  <- "integer"
+
+    m_code <- as.integer(mixed_codes$code)
+    m_pop1 <- match(mixed_codes$pop1, pop_names) - 1L   # 0-based index
+    m_pop2 <- match(mixed_codes$pop2, pop_names) - 1L
+
+    result <- .Call("split_by_ancestry_multi_C",
+                    gt_genotype, ancestry,
+                    pure_codes, m_code, m_pop1, m_pop2,
+                    PACKAGE = "lantern")
+    names(result) <- pop_names
+    result
+}
+
 #' Write VCF files with ancestry-specific dosages
 #'
 #' Write separate VCF files for African and European ancestry-specific

@@ -9,7 +9,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"split_by_ancestry_C",         (DL_FUNC) &split_by_ancestry,         2},
     {"split_phased_by_ancestry_C",  (DL_FUNC) &split_phased_by_ancestry,  5},
     {"split_phased_multi_C",        (DL_FUNC) &split_phased_multi,        5},
-    {"read_bed_file_C",             (DL_FUNC) &read_bed_file,             4},
+    {"split_by_ancestry_multi_C",  (DL_FUNC) &split_by_ancestry_multi,   6},
+    {"read_bed_file_C",            (DL_FUNC) &read_bed_file,              4},
     {"write_vcf_with_ancestry_C",   (DL_FUNC) &write_vcf_with_ancestry,   5},
     {"subset_vcf_by_range_C",       (DL_FUNC) &subset_vcf_by_range,       5},
     {NULL, NULL, 0}

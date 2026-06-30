@@ -30,4 +30,8 @@ SEXP split_phased_multi(SEXP gt_hap0, SEXP gt_hap1,
                          SEXP anc_hap0, SEXP anc_hap1,
                          SEXP pop_codes);
 
+/* Split unphased genotype matrix into K population-specific dosage matrices */
+SEXP split_by_ancestry_multi(SEXP gt, SEXP ancestry, SEXP pure_codes,
+                               SEXP m_code, SEXP m_pop1, SEXP m_pop2);
+
 #endif
