@@ -1,0 +1,313 @@
+---
+title: "Multi-ancestry splitting (K ≥ 3 populations)"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Multi-ancestry splitting (K >= 3 populations)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(lantern)
+```
+
+## Overview
+
+The standard LANTERN workflow splits variant dosages into two
+ancestry-specific pools (African and European).  When the study
+cohort has three or more ancestral backgrounds — for example a
+Latino cohort with African, European, and Native American
+contributions — this two-population assumption is too restrictive.
+
+LANTERN provides two K-population splitting functions:
+
+| Mode | Function | Input | Method |
+|------|----------|-------|--------|
+| **Unphased** | `split_by_ancestry_multi()` | GT matrix + diploid code matrix | Proportional (p1 … pK estimated per variant) |
+| **Phased** | `split_phased_multi()` | Per-haplotype GT + per-haplotype ancestry | Deterministic |
+
+Both return a **named list of K matrices** (variants × samples), one per
+population.  The 2-population special case is numerically identical to
+`split_by_ancestry()` and `split_phased()` respectively.
+
+---
+
+## 1  Unphased multi-ancestry splitting
+
+### 1.1  Specifying the ancestry code system
+
+The diploid ancestry code for K populations encodes which combination of
+two parental backgrounds is present.  You supply two objects:
+
+* **`pure_codes`** — named integer vector, one entry per population:
+  ```r
+  c(AFR = 3L, EUR = 1L, NAT = 4L)
+  ```
+* **`mixed_codes`** — data frame with columns `code`, `pop1`, `pop2`.
+  One row per mixed-ancestry diploid type:
+  ```r
+  data.frame(
+    code = c(2L, 5L, 6L),
+    pop1 = c("AFR", "AFR", "EUR"),
+    pop2 = c("EUR", "NAT", "NAT")
+  )
+  ```
+
+For K populations there are K(K−1)/2 mixed-pair types:
+
+| K | Pure types | Mixed pairs | Total codes |
+|---|-----------|-------------|-------------|
+| 2 | 2 | 1 | 3 |
+| 3 | 3 | 3 | 6 |
+| 4 | 4 | 6 | 10 |
+| 5 | 5 | 10 | 15 |
+
+### 1.2  Three-population example
+
+```{r setup-3pop}
+set.seed(2025)
+N_VAR  <- 12   # variants
+N_SAMP <- 30   # samples
+
+# Ancestry code system
+#   Pure:  AFR=3, EUR=1, NAT=4
+#   Mixed: AFR/EUR=2, AFR/NAT=5, EUR/NAT=6
+pure_codes <- c(AFR = 3L, EUR = 1L, NAT = 4L)
+mixed_codes <- data.frame(
+  code = c(2L,    5L,    6L   ),
+  pop1 = c("AFR", "AFR", "EUR"),
+  pop2 = c("EUR", "NAT", "NAT")
+)
+
+# Simulate rare-variant genotype matrix (mostly 0, rare 1/2)
+gt <- matrix(
+  sample(0:2, N_VAR * N_SAMP, replace = TRUE, prob = c(0.88, 0.10, 0.02)),
+  nrow = N_VAR, ncol = N_SAMP
+)
+rownames(gt) <- paste0("chr19:", seq(1e6, by = 500L, length.out = N_VAR))
+colnames(gt) <- paste0("S", sprintf("%02d", seq_len(N_SAMP)))
+
+# Simulate ancestry codes reflecting a tri-admixed cohort
+#   Roughly: 30% AFR, 20% EUR, 10% NAT, 20% AFR/EUR, 10% AFR/NAT, 10% EUR/NAT
+all_codes <- c(pure_codes, mixed_codes$code)
+code_probs <- c(0.30, 0.20, 0.10, 0.20, 0.10, 0.10)
+anc <- matrix(
+  sample(all_codes, N_VAR * N_SAMP, replace = TRUE, prob = code_probs),
+  nrow = N_VAR, ncol = N_SAMP
+)
+```
+
+```{r split-3pop}
+out <- split_by_ancestry_multi(gt, anc, pure_codes, mixed_codes)
+
+cat("Output list names:", names(out), "\n")
+cat("Dimensions (each matrix):", nrow(out$AFR), "variants x",
+    ncol(out$AFR), "samples\n\n")
+
+cat("AFR dosage (first 4 variants, 6 samples):\n")
+round(out$AFR[1:4, 1:6], 3)
+```
+
+```{r inspect-sums}
+cat("EUR dosage (first 4 variants, 6 samples):\n")
+round(out$EUR[1:4, 1:6], 3)
+
+# Conservation check: per-element sum across pools never exceeds raw gt
+total <- out$AFR + out$EUR + out$NAT
+excess <- max(total - gt)
+cat("\nMax excess of pooled dosage over raw gt:", excess,
+    "(must be <= 0)\n")
+cat("Min dosage value across all pools:", min(out$AFR, out$EUR, out$NAT), "\n")
+```
+
+### 1.3  How p1, p2, p3 are estimated
+
+For each variant, the function estimates population allele proportions
+from **unambiguous observations** only (pure-ancestry samples of any
+genotype, plus mixed hom-alts which each contribute one alt allele to
+each parent pool).  Ambiguous mixed-ancestry heterozygotes are excluded
+from the estimation and then split using the result.
+
+$$D = \sum_{k} \bigl(2N_{kk}^{(2)} + N_{kk}^{(1)}\bigr) + 2\sum_{i<j} N_{ij}^{(2)}$$
+
+$$p_k = \frac{2N_{kk}^{(2)} + N_{kk}^{(1)} + \sum_{j \neq k} N_{\langle kj \rangle}^{(2)}}{D}, \quad \sum_k p_k = 1$$
+
+A mixed-ancestry heterozygote in pair (i, j) then receives:
+$p_i/(p_i+p_j)$ of its dosage in pool i and $p_j/(p_i+p_j)$ in pool j.
+
+```{r proportions-demo}
+# Trace p_k for a single variant by hand
+var_idx <- 3   # pick variant 3
+
+gt_v   <- gt[var_idx, ]
+anc_v  <- anc[var_idx, ]
+
+# Pure AFR (code 3)
+N_AA2 <- sum(anc_v == 3 & gt_v == 2)
+N_AA1 <- sum(anc_v == 3 & gt_v == 1)
+# Pure EUR (code 1)
+N_EE2 <- sum(anc_v == 1 & gt_v == 2)
+N_EE1 <- sum(anc_v == 1 & gt_v == 1)
+# Pure NAT (code 4)
+N_NN2 <- sum(anc_v == 4 & gt_v == 2)
+N_NN1 <- sum(anc_v == 4 & gt_v == 1)
+# Mixed hom-alts
+N_AE2 <- sum(anc_v == 2 & gt_v == 2)
+N_AN2 <- sum(anc_v == 5 & gt_v == 2)
+N_EN2 <- sum(anc_v == 6 & gt_v == 2)
+
+D  <- 2*N_AA2 + N_AA1 + 2*N_EE2 + N_EE1 + 2*N_NN2 + N_NN1 +
+      2*N_AE2 + 2*N_AN2 + 2*N_EN2
+p1 <- if (D > 0) (2*N_AA2 + N_AA1 + N_AE2 + N_AN2) / D else 0.5
+p2 <- if (D > 0) (2*N_EE2 + N_EE1 + N_AE2 + N_EN2) / D else 0.5
+p3 <- if (D > 0) (2*N_NN2 + N_NN1 + N_AN2 + N_EN2) / D else 0.5
+
+cat(sprintf("Variant %d  D=%d  p_AFR=%.3f  p_EUR=%.3f  p_NAT=%.3f\n",
+            var_idx, as.integer(D), p1, p2, p3))
+cat("p1+p2+p3 =", p1 + p2 + p3, "\n")
+```
+
+### 1.4  Singleton edge case
+
+When the denominator D = 0 for a given variant (all alt alleles are
+carried exclusively by mixed-ancestry heterozygotes, with no
+pure-ancestry or mixed hom-alt alt alleles), the function falls back to
+a 50/50 split within each affected pair.
+
+```{r singleton}
+# One sample, one variant: AFR/EUR mixed het, no other data
+gt_s  <- matrix(1L, nrow = 1, ncol = 1)
+anc_s <- matrix(2L, nrow = 1, ncol = 1)   # code 2 = AFR/EUR
+r_s   <- split_by_ancestry_multi(gt_s, anc_s, pure_codes, mixed_codes)
+cat("Singleton AFR/EUR het -> AFR:", r_s$AFR[1,1],
+    " EUR:", r_s$EUR[1,1],
+    " NAT:", r_s$NAT[1,1], "\n")
+```
+
+---
+
+## 2  Phased multi-ancestry splitting
+
+When per-haplotype ancestry calls are available (e.g. from RFMix), the
+split is **deterministic**: each haplotype's allele goes directly to its
+population pool.  No probability estimation is needed.
+
+### 2.1  Specifying populations
+
+`split_phased_multi()` takes a single named integer vector `pop_codes`
+of length K.  The codes must match those in the MSP file
+(RFMix default: 0-based integers).
+
+```{r setup-phased}
+# RFMix codes: AFR=0, EUR=1, NAT=2
+pop_codes_phased <- c(AFR = 0L, EUR = 1L, NAT = 2L)
+```
+
+### 2.2  Three-population example
+
+```{r phased-3pop}
+set.seed(2025)
+N_VAR2  <- 8
+N_SAMP2 <- 6
+
+# Per-haplotype allele matrices (0/1)
+gt_hap0 <- matrix(
+  sample(0:1, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.9, 0.1)),
+  nrow = N_VAR2, ncol = N_SAMP2
+)
+gt_hap1 <- matrix(
+  sample(0:1, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.9, 0.1)),
+  nrow = N_VAR2, ncol = N_SAMP2
+)
+
+# Per-haplotype ancestry codes (0=AFR, 1=EUR, 2=NAT)
+anc_hap0 <- matrix(
+  sample(0:2, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.4, 0.4, 0.2)),
+  nrow = N_VAR2, ncol = N_SAMP2
+)
+anc_hap1 <- matrix(
+  sample(0:2, N_VAR2 * N_SAMP2, replace = TRUE, prob = c(0.4, 0.4, 0.2)),
+  nrow = N_VAR2, ncol = N_SAMP2
+)
+
+phased_out <- split_phased_multi(gt_hap0, gt_hap1,
+                                  anc_hap0, anc_hap1,
+                                  pop_codes_phased)
+
+cat("Output names:", names(phased_out), "\n")
+cat("AFR dosage (first 4 variants):\n")
+print(phased_out$AFR[1:4, ])
+```
+
+```{r phased-verify}
+# Exact reconstruction: AFR + EUR + NAT == hap0 + hap1 everywhere
+raw_diploid <- gt_hap0 + gt_hap1
+recon_error <- max(abs((phased_out$AFR + phased_out$EUR + phased_out$NAT) -
+                         raw_diploid))
+cat("Max reconstruction error:", recon_error, "(must be 0)\n")
+```
+
+The phased function is exact because every haplotype allele goes to
+exactly one pool; there is no probabilistic component.
+
+### 2.3  Two-population equivalence
+
+`split_phased_multi()` with K = 2 is numerically identical to
+`split_phased()`.
+
+```{r phased-2pop-equiv}
+pop2 <- c(AFR = 0L, EUR = 1L)
+gt0b <- matrix(c(1L,0L,1L,0L), 2, 2)
+gt1b <- matrix(c(0L,1L,0L,1L), 2, 2)
+a0b  <- matrix(c(0L,1L,0L,1L), 2, 2)
+a1b  <- matrix(c(1L,0L,1L,0L), 2, 2)
+
+m2 <- split_phased_multi(gt0b, gt1b, a0b, a1b, pop2)
+p2 <- split_phased(gt0b, gt1b, a0b, a1b, pop2)
+
+cat("AFR identical:", identical(unname(m2$AFR), p2$african), "\n")
+cat("EUR identical:", identical(unname(m2$EUR), p2$european), "\n")
+```
+
+---
+
+## 3  Choosing between unphased and phased multi-ancestry
+
+| | `split_by_ancestry_multi()` | `split_phased_multi()` |
+|---|---|---|
+| **Ancestry input** | Diploid code per variant | Per-haplotype code from RFMix |
+| **Splitting rule** | Proportional (p_k estimated per variant) | Deterministic |
+| **Mixed hets** | Split by pairwise ratio p_i / (p_i + p_j) | Not applicable — each haplotype is unambiguous |
+| **Reconstruction** | AFR + EUR + ... ≤ raw gt | AFR + EUR + ... = raw gt exactly |
+| **Required tools** | None | RFMix (phased VCF + MSP) |
+| **Accuracy** | Good for common-to-rare variants | Better for rare variants |
+
+---
+
+## 4  Four- and five-population extension
+
+The same interface extends directly to four or five populations by
+adding entries to `pure_codes` and rows to `mixed_codes`.
+
+```{r four-pop, eval=FALSE}
+# Four populations: AFR, EUR, NAT, EAS
+pure_4  <- c(AFR = 3L, EUR = 1L, NAT = 4L, EAS = 5L)
+mixed_4 <- data.frame(
+  code = c(2L, 6L, 7L, 8L, 9L, 10L),
+  pop1 = c("AFR","AFR","AFR","EUR","EUR","NAT"),
+  pop2 = c("EUR","NAT","EAS","NAT","EAS","EAS")
+)
+# split_by_ancestry_multi(gt, anc, pure_4, mixed_4) → list of 4 matrices
+
+# Five populations: AFR, EUR, NAT, EAS, SAS
+pure_5  <- c(AFR=3L, EUR=1L, NAT=4L, EAS=5L, SAS=6L)
+# mixed_5: 10 rows (one per pair)
+```
+
+There are K(K−1)/2 mixed-pair codes for K populations.  For K = 4 that
+is 6 codes; for K = 5 it is 10.  The `mixed_codes` data frame must list
+all of them.
+
+See `?split_by_ancestry_multi` and `?split_phased_multi` for full
+argument documentation.

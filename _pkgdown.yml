@@ -26,15 +26,17 @@ articles:
     navbar: "Workflows"
     contents:
       - vcf-splitting
+      - multi-ancestry-splitting
       - gene-level-test
 
 reference:
   - title: "Unphased splitting"
     desc: >
       Functions for diploid genotype matrices where ancestry is summarised
-      as a per-variant diploid code (1 = EUR/EUR, 2 = AFR/EUR, 3 = AFR/AFR).
+      as a per-variant diploid code.
     contents:
       - split_by_ancestry
+      - split_by_ancestry_multi
       - run_ancestry_pipeline
       - count_ancestry_codes
 
@@ -44,6 +46,7 @@ reference:
       available (e.g. from RFMix).  Splitting is deterministic.
     contents:
       - split_phased
+      - split_phased_multi
       - run_phased_pipeline
 
   - title: "VCF utilities"
