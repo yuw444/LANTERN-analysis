@@ -448,6 +448,77 @@ static SEXP split_phased_by_ancestry_c(SEXP gt_hap0, SEXP gt_hap1,
 }
 
 // ============================================================================
+// split_phased_multi: K-population phased dosage splitting
+// ============================================================================
+// pop_codes: named integer vector of length K.
+//   pop_codes[p] is the ancestry code for population p.
+//   The output list has K matrices, named after pop_codes.
+// Each haplotype allele is routed to the pool whose code matches the
+// haplotype's local ancestry call.  Unrecognised codes contribute 0
+// to all pools.  NA genotypes are treated as 0 (reference allele).
+static SEXP split_phased_multi_c(SEXP gt_hap0, SEXP gt_hap1,
+                                   SEXP anc_hap0, SEXP anc_hap1,
+                                   SEXP pop_codes) {
+    int K = length(pop_codes);
+    int *codes = INTEGER(pop_codes);
+    SEXP code_names = getAttrib(pop_codes, R_NamesSymbol);
+
+    SEXP dim = PROTECT(getAttrib(gt_hap0, R_DimSymbol));
+    int nrow = INTEGER(dim)[0];
+    int ncol = INTEGER(dim)[1];
+    int n = nrow * ncol;
+
+    SEXP gh0 = PROTECT(coerceVector(gt_hap0, INTSXP));
+    SEXP gh1 = PROTECT(coerceVector(gt_hap1, INTSXP));
+    SEXP ah0 = PROTECT(coerceVector(anc_hap0, INTSXP));
+    SEXP ah1 = PROTECT(coerceVector(anc_hap1, INTSXP));
+
+    int *gh0_ptr = INTEGER(gh0);
+    int *gh1_ptr = INTEGER(gh1);
+    int *ah0_ptr = INTEGER(ah0);
+    int *ah1_ptr = INTEGER(ah1);
+
+    /* Allocate result list and K output matrices */
+    SEXP result = PROTECT(allocVector(VECSXP, K));
+    for (int p = 0; p < K; p++) {
+        SEXP mat = PROTECT(allocMatrix(REALSXP, nrow, ncol));
+        memset(REAL(mat), 0, n * sizeof(double));
+        SET_VECTOR_ELT(result, p, mat);
+        UNPROTECT(1);   /* mat now protected via result */
+    }
+
+    /* Cache per-population output pointers to avoid repeated VECTOR_ELT calls */
+    double **out = (double **) R_alloc(K, sizeof(double *));
+    for (int p = 0; p < K; p++)
+        out[p] = REAL(VECTOR_ELT(result, p));
+
+    /* Route each haplotype allele to its population pool */
+    for (int k = 0; k < n; k++) {
+        int g0 = (gh0_ptr[k] == NA_INTEGER) ? 0 : gh0_ptr[k];
+        int g1 = (gh1_ptr[k] == NA_INTEGER) ? 0 : gh1_ptr[k];
+        int a0 = ah0_ptr[k];
+        int a1 = ah1_ptr[k];
+
+        for (int p = 0; p < K; p++) {
+            if (a0 == codes[p]) { out[p][k] += g0; break; }
+        }
+        for (int p = 0; p < K; p++) {
+            if (a1 == codes[p]) { out[p][k] += g1; break; }
+        }
+    }
+
+    /* Name the output list after the pop_codes names */
+    if (code_names != R_NilValue) {
+        SEXP names = PROTECT(duplicate(code_names));
+        setAttrib(result, R_NamesSymbol, names);
+        UNPROTECT(1);
+    }
+
+    UNPROTECT(6);   /* dim, gh0, gh1, ah0, ah1, result */
+    return result;
+}
+
+// ============================================================================
 // Exported functions (registered in init.c)
 // ============================================================================
 SEXP count_ancestry_codes(SEXP mat, SEXP code) {
@@ -469,6 +540,11 @@ SEXP write_vcf_with_ancestry(SEXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix
 
 SEXP subset_vcf_by_range(SEXP vcf_path, SEXP chrom, SEXP start, SEXP end, SEXP output_path) {
     return subset_vcf_by_range_c(vcf_path, chrom, start, end, output_path);
+}
+
+SEXP split_phased_multi(SEXP gt_hap0, SEXP gt_hap1,
+                         SEXP anc_hap0, SEXP anc_hap1, SEXP pop_codes) {
+    return split_phased_multi_c(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes);
 }
 
 SEXP split_phased_by_ancestry(SEXP gt_hap0, SEXP gt_hap1,

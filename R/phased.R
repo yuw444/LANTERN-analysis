@@ -45,6 +45,61 @@ split_phased <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
     .split_phased(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)
 }
 
+#' Split phased haplotypes into K population-specific dosage matrices
+#'
+#' Generalises \code{\link{split_phased}} to an arbitrary number of ancestries.
+#' Each haplotype's allele is routed to the dosage pool whose code matches its
+#' local ancestry call.  Haplotypes with unrecognised codes contribute 0 to
+#' all pools.  NA genotypes are treated as 0 (reference allele).
+#'
+#' For the two-population case \code{split_phased_multi} and \code{split_phased}
+#' are equivalent; prefer \code{split_phased_multi} for new code that may later
+#' be extended to three or more ancestries.
+#'
+#' @param gt_hap0 Integer matrix (variants x samples) of haplotype-0 alleles (0/1).
+#' @param gt_hap1 Integer matrix (variants x samples) of haplotype-1 alleles (0/1).
+#' @param anc_hap0 Integer matrix (variants x samples) of haplotype-0 ancestry codes.
+#' @param anc_hap1 Integer matrix (variants x samples) of haplotype-1 ancestry codes.
+#' @param pop_codes Named integer vector mapping population label to ancestry code,
+#'   e.g. \code{c(AFR = 0L, EUR = 1L, NAT = 2L)}.  Codes must match those used
+#'   in the MSP file (RFMix default: 0-based integers).
+#'
+#' @return Named list of K numeric matrices (variants x samples), one per
+#'   entry in \code{pop_codes}, in the same order.  List names equal the
+#'   names of \code{pop_codes}.
+#'
+#' @seealso \code{\link{split_phased}} for the two-population convenience wrapper,
+#'   \code{\link{split_by_ancestry}} for unphased (diploid-code) splitting.
+#'
+#' @examples
+#' # Three-population panel: AFR=0, EUR=1, NAT=2
+#' gt0 <- matrix(c(1L, 0L, 0L, 1L, 1L, 0L), nrow = 3, ncol = 2)
+#' gt1 <- matrix(c(0L, 1L, 1L, 0L, 0L, 1L), nrow = 3, ncol = 2)
+#' a0  <- matrix(c(0L, 1L, 2L, 0L, 1L, 2L), nrow = 3, ncol = 2)
+#' a1  <- matrix(c(1L, 2L, 0L, 2L, 0L, 1L), nrow = 3, ncol = 2)
+#' out <- split_phased_multi(gt0, gt1, a0, a1, c(AFR = 0L, EUR = 1L, NAT = 2L))
+#' names(out)   # "AFR" "EUR" "NAT"
+#' out$NAT      # native-ancestry dosage matrix
+#'
+#' @export
+split_phased_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
+                                pop_codes = c(AFR = 0L, EUR = 1L)) {
+    if (is.null(names(pop_codes)))
+        stop("pop_codes must be a named integer vector, e.g. c(AFR=0L, EUR=1L, NAT=2L)")
+    if (length(pop_codes) < 2L)
+        stop("pop_codes must contain at least 2 populations")
+    pop_names <- names(pop_codes)
+    storage.mode(gt_hap0)  <- "integer"
+    storage.mode(gt_hap1)  <- "integer"
+    storage.mode(anc_hap0) <- "integer"
+    storage.mode(anc_hap1) <- "integer"
+    storage.mode(pop_codes) <- "integer"   # preserves names unlike as.integer()
+    result <- .Call("split_phased_multi_C", gt_hap0, gt_hap1, anc_hap0, anc_hap1,
+                    pop_codes, PACKAGE = "lantern")
+    names(result) <- pop_names             # guarantee names even if C skips them
+    result
+}
+
 # ============================================================================
 # MSP / VCF parsing helpers
 # ============================================================================
