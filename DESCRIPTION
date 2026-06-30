@@ -12,6 +12,9 @@ Description: Ancestry-specific rare variant burden testing for admixed
     ancestry inferred from phased or unphased data, then runs
     ancestry-stratified SMMAT gene-level tests via GMMAT.
 URL: https://yuw444.github.io/LANTERN/, https://github.com/yuw444/LANTERN
+Additional_repositories: https://bioconductor.org/packages/release/bioc
+    https://bioconductor.org/packages/release/data/annotation
+SystemRequirements: bcftools (>= 1.10)
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: false
