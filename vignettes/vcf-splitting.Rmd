@@ -277,20 +277,29 @@ The output matrices have rows = variants and columns = samples.  With
 real BCF path) to also produce `african_ds.gds` / `european_ds.gds` for the
 downstream gene-level tests (see `vignette("gene-level-test")`).
 
-For a real cohort BCF + MSP:
+The same call on a real cohort BCF + MSP (JHS chr19, 3313 samples, ~44 k
+variants — runs when the raw data files are present):
 
-```{r phased-pipeline-real, eval=FALSE}
-result <- run_phased_pipeline(
-  vcf_path  = "data/chr19.phased.bcf",
-  msp_path  = "data/chr19.msp.tsv.gz",
-  out_path  = "output/phased/",
+```{r phased-pipeline-real, eval=file.exists("../../raw/LANTERN.phased.bcf")}
+real_result <- run_phased_pipeline(
+  vcf_path  = "../../raw/LANTERN.phased.bcf",
+  msp_path  = "../../raw/LANTERN_chr19.msp.tsv.gz",
+  out_path  = tempfile(),
   chrom     = "chr19",
-  write_vcf = TRUE,
-  verbose   = TRUE
+  write_vcf = FALSE,
+  verbose   = FALSE
 )
-# result$african, result$european — dosage matrices (variants × samples)
-# result$variant_info             — data.frame: chrom, pos, ref, alt
-# result$vcf_paths                — african_ds.vcf, european_ds.vcf, *.gds
+
+cat("Variants kept:", nrow(real_result$african), "\n")
+cat("Samples:      ", ncol(real_result$african), "\n")
+cat("Monomorphic filtered:", real_result$overlap$n_monomorphic_filtered, "\n")
+cat("First 3 variants:\n")
+print(head(real_result$variant_info, 3))
+
+# Sanity checks
+cat("Min dosage (must be >= 0):", min(real_result$african, real_result$european), "\n")
+cat("Max AFR dosage (must be <= 2):", max(real_result$african), "\n")
+cat("Max EUR dosage (must be <= 2):", max(real_result$european), "\n")
 ```
 
 ---
