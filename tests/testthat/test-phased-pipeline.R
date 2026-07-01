@@ -18,9 +18,9 @@ test_that("run_phased_pipeline works with synthetic data", {
     "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS1.0\tS1.1\tS2.0\tS2.1"
   ), con)
   writeLines(c(
-    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t0\t1\t1",
-    "chr19\t1000\t5000\t0.2\t0.3\t10\t1\t0\t0\t1\t1",
-    "chr19\t5000\t10000\t0.3\t0.4\t8\t0\t1\t1\t0\t0"
+    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t0\t1",
+    "chr19\t1000\t5000\t0.2\t0.3\t10\t1\t0\t0\t1",
+    "chr19\t5000\t10000\t0.3\t0.4\t8\t0\t1\t1\t0"
   ), con)
   close(con)
 
@@ -88,13 +88,13 @@ test_that("run_phased_pipeline computes correct dosages", {
     "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS1.0\tS1.1\tS2.0\tS2.1"
   ), con)
   writeLines(c(
-    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t0\t1\t1"
+    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t1\t1"
   ), con)
   close(con)
 
   # VCF: 1 variant at pos 150, S1=0|1, S2=1|0
   # S1: hap0=0 (AFR), hap1=1 (AFR) -> african=0+1=1, european=0
-  # S2: hap0=1 (EUR), hap1=0 (EUR) -> african=0, european=1+0=1
+  # S2: hap0=1 (EUR), hap1=0 (EUR) -> african=0, european=0+1=1
   vcf <- tempfile(fileext = ".vcf", tmpdir = td)
   writeLines(c(
     "##fileformat=VCFv4.2",
@@ -127,12 +127,12 @@ test_that("run_phased_pipeline handles mixed ancestry", {
     "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS1.0\tS1.1\tS2.0\tS2.1"
   ), con)
   writeLines(c(
-    "chr19\t100\t500\t0.1\t0.2\t3\t0\t0\t1\t1\t1"
+    "chr19\t100\t500\t0.1\t0.2\t3\t0\t1\t1\t1"
   ), con)
   close(con)
 
   # VCF: 1 variant, S1=1|1 (hom alt), S2=0|0 (hom ref)
-  # S1: hap0=1 (AFR->0), hap1=1 (EUR->1) -> african=1, european=1
+  # S1: hap0=1 (AFR, code 0), hap1=1 (EUR, code 1) -> african=1, european=1
   # S2: hap0=0 (EUR), hap1=0 (EUR) -> african=0, european=0
   vcf <- tempfile(fileext = ".vcf", tmpdir = td)
   writeLines(c(
@@ -163,7 +163,7 @@ test_that("run_phased_pipeline filters monomorphic variants", {
     "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS1.0\tS1.1"
   ), con)
   writeLines(c(
-    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t1"
+    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0"
   ), con)
   close(con)
 
@@ -198,7 +198,7 @@ test_that("run_phased_pipeline handles sample mismatch", {
     "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS1.0\tS1.1\tS2.0\tS2.1"
   ), con)
   writeLines(c(
-    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t1\t0\t1"
+    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t1\t0"
   ), con)
   close(con)
 
@@ -233,7 +233,7 @@ test_that("run_phased_pipeline errors on no common samples", {
     "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tX1.0\tX1.1"
   ), con)
   writeLines(c(
-    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t1"
+    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0"
   ), con)
   close(con)
 
@@ -265,7 +265,7 @@ test_that("run_phased_pipeline handles variants outside tracts", {
     "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS1.0\tS1.1"
   ), con)
   writeLines(c(
-    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0\t1"
+    "chr19\t100\t1000\t0.1\t0.2\t5\t0\t0"
   ), con)
   close(con)
 
