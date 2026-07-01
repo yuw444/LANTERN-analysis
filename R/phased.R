@@ -163,8 +163,8 @@ split_phased_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
   tract_df    <- tract_df[tract_order, ]
   rownames(tract_df) <- NULL
 
-  # Ancestry columns start at column 8 in data rows (7 metadata fields)
-  anc_values   <- data_mat[, 8:ncol(data_mat), drop = FALSE]
+  # Ancestry columns start at column 7 in data rows (6 metadata fields: chm spos epos sgpos egpos "n snps")
+  anc_values   <- data_mat[, 7:ncol(data_mat), drop = FALSE]
   n_tracts_orig <- nrow(tract_df)
   n_samples     <- length(sample_ids)
 

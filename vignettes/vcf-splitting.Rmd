@@ -213,25 +213,85 @@ otherwise.  Same for hap1.
 9. Optionally write ancestry-specific VCFs with a DS (dosage) field
    and convert them to GDS format.
 
-```{r phased-pipeline, eval=FALSE}
-# Requires bcftools in PATH and real phased VCF + MSP files
+```{r phased-pipeline-setup}
+# Build minimal synthetic VCF and MSP in a temp directory
+tmp_dir  <- tempfile()
+dir.create(tmp_dir)
+vcf_path <- file.path(tmp_dir, "phased.vcf")
+msp_path <- file.path(tmp_dir, "ancestry.msp.tsv")
+out_path <- file.path(tmp_dir, "out")
+
+# 3 variants × 3 samples, phased GTs
+writeLines(c(
+  "##fileformat=VCFv4.1",
+  '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+  paste(c("#CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO",
+          "FORMAT","S1","S2","S3"), collapse = "\t"),
+  paste(c("19","1100",".","A","G","100","PASS",".","GT","0|1","1|0","0|0"), collapse = "\t"),
+  paste(c("19","1200",".","C","T","100","PASS",".","GT","1|1","0|1","1|0"), collapse = "\t"),
+  paste(c("19","2100",".","G","A","100","PASS",".","GT","0|0","1|0","0|1"), collapse = "\t")
+), vcf_path)
+
+# RFMix MSP: 2 ancestry tracts, pop codes AFR=0 EUR=1
+#   tract 1 [1000,2000): S1=AFR|EUR  S2=EUR|AFR  S3=AFR|EUR
+#   tract 2 [2000,3000): S1=EUR|AFR  S2=AFR|EUR  S3=EUR|AFR
+writeLines(c(
+  paste(c("#Subpopulation order/codes: AFR=0", "EUR=1"), collapse = "\t"),
+  paste(c("#chm","spos","epos","sgpos","egpos","n snps",
+          "S1.0","S1.1","S2.0","S2.1","S3.0","S3.1"), collapse = "\t"),
+  paste(c("19","1000","2000","0.0","0.1","2","0","1","1","0","0","1"), collapse = "\t"),
+  paste(c("19","2000","3000","0.1","0.2","1","1","0","0","1","1","0"), collapse = "\t")
+), msp_path)
+```
+
+```{r phased-pipeline}
 result <- run_phased_pipeline(
-  vcf_path = "data/chr19.phased.bcf",
-  msp_path = "data/chr19.msp.tsv.gz",
+  vcf_path  = vcf_path,
+  msp_path  = msp_path,
+  out_path  = out_path,
+  write_vcf = FALSE,
+  verbose   = FALSE
+)
+
+cat("African dosage (variants × samples):\n")
+print(result$african)
+
+cat("\nEuropean dosage:\n")
+print(result$european)
+
+cat("\nVariant info:\n")
+print(result$variant_info)
+
+# Sanity check: AFR + EUR == hap0 + hap1 everywhere
+vcf_lines <- readLines(vcf_path)[-(1:3)]
+raw <- do.call(rbind, lapply(vcf_lines, function(l) {
+  gts <- strsplit(l, "\t")[[1]][10:12]
+  vapply(gts, function(g) sum(as.integer(strsplit(g, "|", fixed=TRUE)[[1]])), integer(1))
+}))
+max_err <- max(abs((result$african + result$european) - raw))
+cat("\nMax reconstruction error (must be 0):", max_err, "\n")
+```
+
+The output matrices have rows = variants and columns = samples.  With
+`write_vcf = FALSE` no files are written; set it to `TRUE` (and provide a
+real BCF path) to also produce `african_ds.gds` / `european_ds.gds` for the
+downstream gene-level tests (see `vignette("gene-level-test")`).
+
+For a real cohort BCF + MSP:
+
+```{r phased-pipeline-real, eval=FALSE}
+result <- run_phased_pipeline(
+  vcf_path  = "data/chr19.phased.bcf",
+  msp_path  = "data/chr19.msp.tsv.gz",
   out_path  = "output/phased/",
   chrom     = "chr19",
   write_vcf = TRUE,
   verbose   = TRUE
 )
-
-# result$african  — dosage matrix, rows=variants, cols=samples
-# result$european — dosage matrix
-# result$variant_info — data.frame: chrom, pos, ref, alt
-# result$vcf_paths    — paths to african_ds.vcf, european_ds.vcf, *.gds
+# result$african, result$european — dosage matrices (variants × samples)
+# result$variant_info             — data.frame: chrom, pos, ref, alt
+# result$vcf_paths                — african_ds.vcf, european_ds.vcf, *.gds
 ```
-
-The output `african_ds.gds` / `european_ds.gds` files are the primary
-input for the downstream gene-level tests (see `vignette("gene-level-test")`).
 
 ---
 
