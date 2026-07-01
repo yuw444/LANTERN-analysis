@@ -304,7 +304,84 @@ cat("Max EUR dosage (must be <= 2):", max(real_result$european), "\n")
 
 ---
 
-## 3  Choosing between unphased and phased
+## 3  Real-data comparison: phased vs unphased on the same files
+
+Using the same BCF + MSP we can run **both** modes and compare totals.
+The unphased mode derives diploid GT (hap0 + hap1) and diploid ancestry
+codes (AFR/AFR=3, EUR/EUR=1, mixed=2) from the per-haplotype data before
+calling `split_by_ancestry()`.
+
+```{r real-data-unphased, eval=file.exists("../../raw/LANTERN.phased.bcf")}
+vcf_real <- "../../raw/LANTERN.phased.bcf"
+msp_real <- "../../raw/LANTERN_chr19.msp.tsv.gz"
+
+# --- Parse MSP (internal helper, already validated by run_phased_pipeline) ---
+msp_data <- lantern:::.parse_msp(msp_real, verbose = FALSE)
+
+# --- Read BCF via bcftools ---
+vcf_samples <- system(paste("bcftools query -l", shQuote(vcf_real)),
+                      intern = TRUE, ignore.stderr = TRUE)
+tmp_gt <- tempfile(fileext = ".tsv")
+system(paste0('bcftools query -f "%CHROM\t%POS\t%REF\t%ALT[\t%GT]\n" ',
+              shQuote(vcf_real), " > ", shQuote(tmp_gt)),
+       ignore.stderr = TRUE)
+gt_dt <- data.table::fread(tmp_gt, header = FALSE, sep = "\t")
+unlink(tmp_gt)
+
+# --- Intersect samples ---
+common  <- intersect(vcf_samples, msp_data$sample_ids)
+vcf_col <- match(common, vcf_samples) + 4L   # columns 1-4 are CHROM/POS/REF/ALT
+msp_idx <- match(common, msp_data$sample_ids)
+
+# --- Parse phased GT -> diploid dosage (hap0 + hap1) ---
+gt_chars   <- as.matrix(gt_dt)[, vcf_col]
+gt_vec     <- as.character(gt_chars)
+h0 <- as.integer(substr(gt_vec, 1, 1)); h0[is.na(h0)] <- 0L
+h1 <- as.integer(substr(gt_vec, 3, 3)); h1[is.na(h1)] <- 0L
+gt_diploid <- matrix(h0 + h1, nrow = nrow(gt_dt), ncol = length(common))
+
+# --- Map variants to ancestry tracts ---
+vcf_pos  <- as.integer(gt_dt[[2]])
+tract_df <- msp_data$tract_df
+tidx     <- findInterval(vcf_pos, tract_df$spos)
+valid    <- tidx > 0 & vcf_pos <= tract_df$epos[pmax(1L, tidx)]
+tidx_v   <- tidx[valid]
+
+# --- Derive diploid ancestry (variants x samples) --- vectorised via matrix columns
+anc_hap0 <- msp_data$anc_hap0[msp_idx, ]   # (n_common x n_tracts)
+anc_hap1 <- msp_data$anc_hap1[msp_idx, ]
+h0v <- t(anc_hap0[, tidx_v])               # (n_valid_vars x n_common)
+h1v <- t(anc_hap1[, tidx_v])
+anc_diploid <- ifelse(h0v == 0L & h1v == 0L, 3L,
+               ifelse(h0v == 1L & h1v == 1L, 1L, 2L))  # AFR/AFR=3 EUR/EUR=1 mixed=2
+
+cat("Ancestry code counts (sample of 1000 cells):\n")
+print(table(anc_diploid[1:1000, ]))
+
+# --- Run unphased split ---
+unphased <- split_by_ancestry(gt_diploid[valid, ], anc_diploid)
+
+cat("\n--- Unphased split_by_ancestry() ---\n")
+cat("Variants x samples:", nrow(unphased$african), "x", ncol(unphased$african), "\n")
+cat("AFR total dosage:  ", round(sum(unphased$african),  1), "\n")
+cat("EUR total dosage:  ", round(sum(unphased$european), 1), "\n")
+cat("Min / max dosage:  ", min(unphased$african, unphased$european),
+    "/", max(unphased$african, unphased$european), "\n")
+
+cat("\n--- Phased run_phased_pipeline() ---\n")
+cat("Variants x samples:", nrow(real_result$african), "x", ncol(real_result$african), "\n")
+cat("AFR total dosage:  ", round(sum(real_result$african),  1), "\n")
+cat("EUR total dosage:  ", round(sum(real_result$european), 1), "\n")
+cat("Min / max dosage:  ", min(real_result$african, real_result$european),
+    "/", max(real_result$african, real_result$european), "\n")
+
+cat("\nNote: totals differ because phased is deterministic and unphased\n",
+    "uses p1/p2 proportions for ambiguous mixed heterozygotes.\n")
+```
+
+---
+
+## 4  Choosing between unphased and phased
 
 | | Unphased | Phased |
 |---|---|---|
