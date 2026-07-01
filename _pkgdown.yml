@@ -1,8 +1,7 @@
 url: https://yuw444.github.io/LANTERN/
 
 template:
-  bootstrap: 5
-  bootswatch: cosmo
+  bootstrap: 3
 
 home:
   title: "LANTERN"

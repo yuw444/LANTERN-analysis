@@ -1,26 +1,40 @@
 # LANTERN
 
-**L**ocal **A**ncestry-**N**oted **T**ransmission **R**egion **N**ucleotides
+**L**everaging Local **AN**cestry **T**racts to **E**nhance **R**are-Varia**N**t Aggregate Association Testing
 
-R package for **Ancestry-Specific Rare Variant Association Analysis** with pure C backend.
+[![pkgdown site](https://img.shields.io/badge/docs-pkgdown-blue)](https://yuw444.github.io/LANTERN/)
+[![GitHub](https://img.shields.io/badge/source-GitHub-lightgrey)](https://github.com/yuw444/LANTERN)
+
+Full documentation, vignettes, and function reference: **<https://yuw444.github.io/LANTERN/>**
 
 ## Features
 
 - **Pure C backend** for performance-critical operations
 - Efficient matrix operations for ancestry code counting
-- Genotype splitting by ancestry (African/European)
+- Genotype splitting by local ancestry (African/European)
+- Supporting multiple mixed ancestry (Up to 5)
 - Direct data frame/matrix input (no PLINK dependency)
 - **Automatic overlap handling** for sample and variant mismatches
 - **Monomorphic filtering** - removes variants with no alt alleles
 
 ## Installation
 
-```r
-# Install from GitHub
-devtools::install_github("yuw444/LANTERN", subdir = "lantern")
+SeqArray and SeqVarTools are Bioconductor packages and are not found by
+`devtools::install_github()` automatically. Use BiocManager to handle all
+dependencies in one step:
 
-# Or from local source
-R CMD INSTALL lantern/
+```r
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("yuw444/LANTERN/lantern")
+```
+
+Or pre-install the Bioconductor packages first, then use devtools:
+
+```r
+BiocManager::install(c("SeqArray", "SeqVarTools"))
+devtools::install_github("yuw444/LANTERN", subdir = "lantern")
 ```
 
 ## Quick Start
@@ -154,9 +168,46 @@ Where N1-N8 are counts per variant:
 
 ## Dependencies
 
-- R >= 4.0
-- data.table
-- dplyr
+### R packages
+
+| Package | Type | Source | Notes |
+|---------|------|--------|-------|
+| [data.table](https://cran.r-project.org/package=data.table) | Required | CRAN | — |
+| [SeqArray](https://bioconductor.org/packages/SeqArray/) | Required | Bioconductor | GDS file I/O |
+| [SeqVarTools](https://bioconductor.org/packages/SeqVarTools/) | Required | Bioconductor | Variant iteration |
+| [GMMAT](https://cran.r-project.org/package=GMMAT) | Suggested | CRAN | SMMAT gene-level tests |
+| [dplyr](https://cran.r-project.org/package=dplyr) | Suggested | CRAN | Vignettes only |
+
+**Bioconductor packages are not installed automatically by `devtools::install_github()`.**
+Use the `BiocManager` installation instructions above.
+
+### System tools
+
+| Tool | Version | Required for |
+|------|---------|-------------|
+| [`bcftools`](https://samtools.github.io/bcftools/) | ≥ 1.10 | Phased-mode functions only (`read_phased_vcf`, `run_phased_pipeline`, `filter_phased_vcf_samples`) |
+
+Install bcftools via your system package manager:
+
+```bash
+# macOS
+brew install bcftools
+
+# Debian / Ubuntu
+sudo apt install bcftools
+
+# Conda / pixi
+conda install -c bioconda bcftools
+```
+
+The unphased splitting functions (`split_by_ancestry`, `split_by_ancestry_multi`,
+`run_ancestry_pipeline`) do **not** require bcftools.
+
+### Compiler
+
+A C compiler (gcc or clang) is required to build the package from source. No
+external C libraries are needed — the C backend uses only standard R headers
+and plain C file I/O.
 
 ## License
 
