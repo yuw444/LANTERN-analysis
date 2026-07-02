@@ -47,6 +47,7 @@ reference:
       - split_phased
       - split_phased_multi
       - run_phased_pipeline
+      - run_combined_pipeline
 
   - title: "VCF utilities"
     desc: Write and subset ancestry-specific VCF files.
