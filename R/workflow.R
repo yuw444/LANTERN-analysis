@@ -417,6 +417,149 @@ create_ancestry_vcfs <- function(vcf_path, gt_matrix, pt_matrix,
 }
 
 # ============================================================================
+# Public utility: write a dosage matrix to GDS
+# ============================================================================
+
+#' Write an ancestry-specific dosage matrix to a SeqArray GDS file
+#'
+#' Converts a dosage matrix (rows = variants, columns = samples) to a
+#' SeqArray GDS file via a temporary VCF with a \code{DS} FORMAT field.
+#' The resulting GDS can be passed directly to \code{GMMAT::SMMAT()} via the
+#' \code{gds.fn} argument with \code{is.dosage = TRUE}.
+#'
+#' @param dosage_mat Numeric matrix; rows = variants, columns = samples.
+#'   Values should be in \eqn{[0, 2]}.
+#' @param variant_info Data frame with columns \code{chrom}, \code{pos},
+#'   \code{ref}, \code{alt} (one row per variant in the same order as rows of
+#'   \code{dosage_mat}).  Returned directly by
+#'   \code{\link{run_combined_pipeline}} and \code{\link{run_phased_pipeline}}.
+#' @param sample_ids Character vector of sample identifiers, length equal to
+#'   \code{ncol(dosage_mat)}.
+#' @param gds_path Output file path for the GDS file (e.g. \code{"afr.gds"}).
+#'
+#' @return Invisibly returns \code{gds_path}.
+#'
+#' @seealso \code{\link{run_combined_pipeline}}, \code{\link{cauchy_combine}}
+#'
+#' @examples
+#' \dontrun{
+#' combined <- run_combined_pipeline("cohort.bcf", "cohort.msp.tsv")
+#' vi  <- combined$phased$variant_info
+#' ids <- combined$phased$sample_ids
+#' write_dosage_gds(combined$phased$AFR, vi, ids, "afr_phased.gds")
+#' write_dosage_gds(combined$phased$EUR, vi, ids, "eur_phased.gds")
+#' }
+#'
+#' @export
+write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
+  if (!requireNamespace("SeqArray", quietly = TRUE))
+    stop("Package 'SeqArray' is required. Install with: BiocManager::install('SeqArray')")
+
+  n_var  <- nrow(dosage_mat)
+  n_samp <- ncol(dosage_mat)
+  if (n_var != nrow(variant_info))
+    stop("nrow(dosage_mat) must equal nrow(variant_info)")
+  if (n_samp != length(sample_ids))
+    stop("ncol(dosage_mat) must equal length(sample_ids)")
+
+  vcf_path <- paste0(tools::file_path_sans_ext(gds_path), "_tmp_ds.vcf")
+  on.exit(unlink(vcf_path), add = TRUE)
+
+  gt_map <- c("0/0", "0/1", "1/1")
+  con <- file(vcf_path, open = "wt")
+  writeLines(c(
+    "##fileformat=VCFv4.2",
+    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+    paste0('##FORMAT=<ID=DS,Number=1,Type=Float,',
+           'Description="Ancestry-specific dosage of the alternate allele">'),
+    paste(c("#CHROM", "POS", "ID", "REF", "ALT",
+            "QUAL", "FILTER", "INFO", "FORMAT", sample_ids),
+          collapse = "\t")
+  ), con)
+
+  for (i in seq_len(n_var)) {
+    ds     <- dosage_mat[i, ]
+    gt_idx <- pmin(2L, pmax(0L, as.integer(round(ds))))
+    gt     <- gt_map[gt_idx + 1L]
+    sfields <- ifelse(is.na(ds), "./.:.",
+                      paste0(gt, ":", sprintf("%.6f", ds)))
+    writeLines(paste(c(variant_info$chrom[i],
+                       as.character(variant_info$pos[i]),
+                       ".",
+                       variant_info$ref[i],
+                       variant_info$alt[i],
+                       ".", "PASS", ".", "GT:DS",
+                       sfields),
+                     collapse = "\t"), con)
+  }
+  close(con)
+
+  SeqArray::seqVCF2GDS(vcf_path, gds_path, verbose = FALSE)
+  invisible(gds_path)
+}
+
+# ============================================================================
+# Public utility: Cauchy combination test
+# ============================================================================
+
+#' Cauchy combination test for multiple p-values
+#'
+#' Combines \eqn{K} p-values from correlated or independent tests into a single
+#' meta-analysis p-value using the Cauchy combination test (Liu & Xie 2020).
+#' Unlike Fisher's method, the test remains valid under arbitrary dependency
+#' structures among p-values.
+#'
+#' @param p_values Numeric vector of p-values (\eqn{K \ge 2}).
+#'   Values must be in \eqn{(0, 1]}.  Exact zeros are clipped to
+#'   \code{.Machine$double.eps}.
+#' @param weights Optional non-negative numeric weight vector of the same
+#'   length as \code{p_values}.  Defaults to equal weights.
+#'
+#' @return A single numeric p-value in \eqn{(0, 1]}.
+#'
+#' @references
+#' Liu, Y. and Xie, J. (2020). Cauchy Combination Test: A Powerful Test With
+#' Analytic p-Value Calculation Under Arbitrary Dependency Structures.
+#' \emph{J. Am. Stat. Assoc.} \strong{115}(529), 393--402.
+#' \doi{10.1080/01621459.2019.1672715}
+#'
+#' @examples
+#' # Combine African-ancestry and European-ancestry p-values for one gene
+#' cauchy_combine(c(0.01, 0.04))
+#'
+#' # Three-population meta-analysis
+#' cauchy_combine(c(0.01, 0.04, 0.20))
+#'
+#' # Weighted combination (double weight on AFR)
+#' cauchy_combine(c(0.01, 0.04), weights = c(2, 1))
+#'
+#' # Apply across a results table (one gene per row)
+#' # mapply(cauchy_combine, split(cbind(p_aa, p_ee), seq_len(nrow(res))))
+#'
+#' @seealso \code{\link{write_dosage_gds}}, \code{\link{run_combined_pipeline}}
+#'
+#' @export
+cauchy_combine <- function(p_values, weights = NULL) {
+  p <- as.numeric(p_values)
+  if (length(p) < 2) stop("p_values must have length >= 2")
+  if (any(is.na(p)))  stop("p_values contains NA")
+  if (any(p <= 0 | p > 1)) stop("p_values must be in (0, 1]")
+  p <- pmax(p, .Machine$double.eps)
+
+  if (is.null(weights)) {
+    T_stat <- mean(tan((0.5 - p) * pi))
+  } else {
+    w <- as.numeric(weights)
+    if (length(w) != length(p)) stop("weights must be the same length as p_values")
+    if (any(w < 0))             stop("weights must be non-negative")
+    w      <- w / sum(w)
+    T_stat <- sum(w * tan((0.5 - p) * pi))
+  }
+
+  pcauchy(T_stat, lower.tail = FALSE)
+}
+
+# ============================================================================
 # Internal: unphased pipeline from VCF + MSP
 # ============================================================================
 

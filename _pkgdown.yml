@@ -27,6 +27,7 @@ articles:
       - vcf-splitting
       - multi-ancestry-splitting
       - gene-level-test
+      - complete-workflow
 
 reference:
   - title: "Unphased splitting"
@@ -57,8 +58,10 @@ reference:
       - subset_vcf_by_range
 
   - title: "Downstream helpers"
-    desc: Helpers for preparing inputs to SMMAT gene-level tests.
+    desc: Helpers for writing GDS files and combining ancestry-specific p-values.
     contents:
+      - write_dosage_gds
+      - cauchy_combine
       - calc_gene_ancestry_weights
 
   - title: "Package"

@@ -312,7 +312,10 @@ single-function shortcut.  It parses the VCF and MSP once and returns a
 named list with two elements, `$phased` and `$unphased`, each containing
 `african`, `european`, `variant_info`, `sample_ids`, and `overlap`.
 
-The synthetic VCF and MSP created above are still in scope:
+The synthetic VCF and MSP created above are still in scope.  The return
+value is a named list: `$phased` and `$unphased`, each containing one
+matrix per population (named by the MSP population labels) plus
+`variant_info`, `sample_ids`, and `overlap`.
 
 ```{r combined-pipeline-synthetic}
 combined <- run_combined_pipeline(
@@ -321,22 +324,76 @@ combined <- run_combined_pipeline(
   verbose  = FALSE
 )
 
+# Population names come directly from the MSP header
+pop_names <- setdiff(names(combined$phased),
+                     c("variant_info", "sample_ids", "overlap"))
+cat("Populations:", paste(pop_names, collapse = ", "), "\n\n")
+
 cat("=== $phased ===\n")
-cat("African dosage:\n");  print(combined$phased$african)
-cat("European dosage:\n"); print(combined$phased$european)
+for (p in pop_names) {
+  cat(p, "dosage:\n"); print(combined$phased[[p]])
+}
 
 cat("\n=== $unphased ===\n")
-cat("African dosage:\n");  print(combined$unphased$african)
-cat("European dosage:\n"); print(combined$unphased$european)
+for (p in pop_names) {
+  cat(p, "dosage:\n"); print(combined$unphased[[p]])
+}
 
 cat("\nVariants in both modes:", nrow(combined$phased$variant_info), "\n")
 cat("Samples:               ", length(combined$phased$sample_ids), "\n")
 ```
 
+### 3.1  Three-population example
+
+The same function works unchanged for K > 2.  Here we add a Native
+American (NAT) population:
+
+```{r combined-pipeline-3pop}
+vcf3 <- file.path(tmp_dir, "phased3.vcf")
+msp3 <- file.path(tmp_dir, "ancestry3.msp.tsv")
+
+writeLines(c(
+  "##fileformat=VCFv4.1",
+  '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+  paste(c("#CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO",
+          "FORMAT","S1","S2","S3"), collapse="\t"),
+  paste(c("19","1500",".","A","G","100","PASS",".","GT","1|0","0|1","1|1"),
+        collapse="\t"),
+  paste(c("19","2500",".","C","T","100","PASS",".","GT","0|0","1|0","0|1"),
+        collapse="\t")
+), vcf3)
+
+# Three populations: AFR=0, EUR=1, NAT=2
+writeLines(c(
+  paste(c("#Subpopulation order/codes: AFR=0", "EUR=1", "NAT=2"),
+        collapse="\t"),
+  paste(c("#chm","spos","epos","sgpos","egpos","n snps",
+          "S1.0","S1.1","S2.0","S2.1","S3.0","S3.1"), collapse="\t"),
+  # tract 1 [1000,2000): S1=AFR|EUR  S2=EUR|NAT  S3=AFR|NAT
+  paste(c("19","1000","2000","0.0","0.1","1","0","1","1","2","0","2"),
+        collapse="\t"),
+  # tract 2 [2000,3000): S1=EUR|AFR  S2=AFR|EUR  S3=NAT|EUR
+  paste(c("19","2000","3000","0.1","0.2","1","1","0","0","1","2","1"),
+        collapse="\t")
+), msp3)
+
+combined3 <- run_combined_pipeline(vcf3, msp3, verbose = FALSE)
+
+pop3 <- setdiff(names(combined3$phased),
+                c("variant_info", "sample_ids", "overlap"))
+cat("Populations:", paste(pop3, collapse = ", "), "\n\n")
+
+cat("=== Phased dosages ===\n")
+for (p in pop3) { cat(p, ":\n"); print(combined3$phased[[p]]) }
+
+cat("\n=== Unphased dosages ===\n")
+for (p in pop3) { cat(p, ":\n"); print(combined3$unphased[[p]]) }
+```
+
 The phased and unphased matrices share the same variant set here because
 no extra variants become monomorphic under one mode but not the other.
-For rare-variant-rich real cohorts the two variant_info frames may differ
-by a handful of rows.
+For rare-variant-rich real cohorts the two `variant_info` frames may
+differ by a handful of rows.
 
 On the real JHS chr19 cohort (runs when raw files are present):
 
@@ -348,27 +405,26 @@ combined_real <- run_combined_pipeline(
   verbose  = FALSE
 )
 
+pop_r <- setdiff(names(combined_real$phased),
+                 c("variant_info", "sample_ids", "overlap"))
+
 cat("=== Phased ===\n")
-cat("Variants x samples:", nrow(combined_real$phased$african), "x",
-    ncol(combined_real$phased$african), "\n")
-cat("AFR total dosage:  ", round(sum(combined_real$phased$african),  1), "\n")
-cat("EUR total dosage:  ", round(sum(combined_real$phased$european), 1), "\n")
-cat("Dosage range:      ", min(combined_real$phased$african,
-                                combined_real$phased$european), "–",
-    max(combined_real$phased$african, combined_real$phased$european), "\n")
+cat("Variants x samples:",
+    nrow(combined_real$phased$variant_info), "x",
+    length(combined_real$phased$sample_ids), "\n")
+for (p in pop_r)
+  cat(p, "total dosage:", round(sum(combined_real$phased[[p]]), 1), "\n")
 
 cat("\n=== Unphased ===\n")
-cat("Variants x samples:", nrow(combined_real$unphased$african), "x",
-    ncol(combined_real$unphased$african), "\n")
-cat("AFR total dosage:  ", round(sum(combined_real$unphased$african),  1), "\n")
-cat("EUR total dosage:  ", round(sum(combined_real$unphased$european), 1), "\n")
-cat("Dosage range:      ", min(combined_real$unphased$african,
-                                combined_real$unphased$european), "–",
-    max(combined_real$unphased$african, combined_real$unphased$european), "\n")
+cat("Variants x samples:",
+    nrow(combined_real$unphased$variant_info), "x",
+    length(combined_real$unphased$sample_ids), "\n")
+for (p in pop_r)
+  cat(p, "total dosage:", round(sum(combined_real$unphased[[p]]), 1), "\n")
 
-cat("\nNote: AFR totals differ slightly because phased assigns alleles\n",
-    "deterministically while unphased uses p1/p2 proportions for\n",
-    "ambiguous mixed heterozygotes.\n")
+cat("\nNote: totals differ slightly because phased assigns alleles\n",
+    "deterministically while unphased uses proportional splitting\n",
+    "for ambiguous mixed heterozygotes.\n")
 ```
 
 ---

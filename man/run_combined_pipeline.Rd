@@ -18,32 +18,27 @@ If \code{NULL}, all chromosomes present in the VCF are used.}
 \item{verbose}{Print step-by-step progress messages.}
 }
 \value{
-Invisibly, a list with two named elements:
-  \describe{
-    \item{\code{phased}}{Deterministic per-haplotype split via
-      \code{\link{split_phased}}: a list with \code{african},
-      \code{european} (variants \eqn{\times} samples integer matrices),
-      \code{variant_info}, \code{sample_ids}, and \code{overlap}.}
-    \item{\code{unphased}}{Proportional diploid split via
-      \code{\link{split_by_ancestry}} using MSP-derived ancestry codes:
-      same structure as \code{phased}.}
-  }
+Invisibly, a list with two named elements, \code{phased} and
+  \code{unphased}.  Each element is itself a list whose first K entries
+  are named dosage matrices (variants \eqn{\times} samples), one per
+  population in the order given by the MSP file (e.g. \code{$AFR},
+  \code{$EUR}).  Additional entries: \code{variant_info},
+  \code{sample_ids}, and \code{overlap}.
 }
 \description{
 Parses the VCF/BCF and RFMix MSP file once, then runs both
-deterministic per-haplotype splitting (\code{\link{split_phased}}) and
-proportional diploid splitting (\code{\link{split_by_ancestry}}).
-Returns both results so that they can be compared directly.
+deterministic per-haplotype splitting (\code{\link{split_phased_multi}})
+and proportional diploid splitting
+(\code{\link{split_by_ancestry_multi}}).
+Works for any number of populations K \eqn{\ge} 2.
 }
 \details{
 Both splits share the same parsed MSP tracts and VCF genotypes.
-For the \strong{unphased} path the two haplotype alleles are summed to a
-diploid dosage (0/1/2) and per-haplotype population codes from the MSP are
-combined into diploid codes: AFR/AFR \eqn{\to} 3, EUR/EUR \eqn{\to} 1,
-mixed \eqn{\to} 2.  Only two-population MSP files are supported.
-
-Monomorphic variants are filtered independently in each mode, so the two
-\code{variant_info} frames may differ slightly in row count.
+Diploid ancestry codes are generated automatically from the MSP
+population codes: pure-ancestry codes are 1 \ldots K (one per
+population) and mixed-ancestry codes are K+1 \ldots K+M where
+M = K(K-1)/2 enumerates all unordered pairs.
+Monomorphic variants are filtered independently in each mode.
 }
 \examples{
 \dontrun{
@@ -52,8 +47,8 @@ res <- run_combined_pipeline(
   msp_path = "data/chr19.msp.tsv.gz",
   chrom    = "chr19"
 )
-res$phased$african      # deterministic AFR dosage matrix
-res$unphased$african    # proportional AFR dosage matrix
+res$phased$AFR    # deterministic AFR dosage matrix
+res$unphased$AFR  # proportional AFR dosage matrix
 }
 
 }

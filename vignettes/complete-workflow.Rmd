@@ -1,0 +1,365 @@
+---
+title: "Complete LANTERN workflow: split → GDS → test → combine"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Complete LANTERN workflow: split → GDS → test → combine}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(lantern)
+library(SeqArray)
+```
+
+## Overview
+
+This vignette walks through the complete LANTERN pipeline from raw phased
+VCF + RFMix MSP files to ancestry-stratified gene-level burden test p-values.
+
+```
+Phased VCF (BCF) + RFMix MSP
+          │
+          ▼
+  run_combined_pipeline()
+          │
+   ┌──────┴──────┐
+phased split  unphased split
+   │                 │
+   ▼                 ▼
+write_dosage_gds()  write_dosage_gds()
+   │                 │
+ AFR.gds  EUR.gds  AFR_un.gds  EUR_un.gds
+          │
+    glmmkin()  ← phenotype + kinship matrix
+          │
+    ┌─────┼─────┐
+    │     │     │
+ SMMAT  SMMAT  SMMAT
+  AFR   EUR   observed
+    │     │
+  cauchy_combine()
+          │
+  per-gene multi-ancestry p-value
+```
+
+Steps 1–3 run on synthetic data and are fully executable.
+Steps 4–5 (GMMAT/SMMAT) require the **GMMAT** package and are shown as
+non-evaluated code blocks with expected output.
+
+---
+
+## 1  Synthetic dataset
+
+We create a minimal phased VCF and RFMix MSP file in a temporary directory.
+In a real analysis replace these paths with your cohort files.
+
+```{r setup-data}
+set.seed(42)
+tmp <- tempfile(); dir.create(tmp)
+vcf_path <- file.path(tmp, "cohort_phased.vcf")
+msp_path <- file.path(tmp, "cohort_rfmix.msp.tsv")
+
+# 8 variants × 5 phased samples
+samples <- paste0("S", 1:5)
+header <- c(
+  "##fileformat=VCFv4.1",
+  '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+  paste(c("#CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT",
+          samples), collapse = "\t")
+)
+variants <- rbind(
+  c("19","1100",".","A","G","100","PASS",".","GT","0|1","1|0","0|0","1|0","0|1"),
+  c("19","1200",".","C","T","100","PASS",".","GT","1|1","0|1","1|0","0|0","1|1"),
+  c("19","1700",".","G","A","100","PASS",".","GT","0|0","1|0","0|1","1|0","0|0"),
+  c("19","2100",".","T","C","100","PASS",".","GT","1|0","0|1","1|1","0|1","1|0"),
+  c("19","2300",".","A","C","100","PASS",".","GT","0|0","0|0","0|1","0|0","0|0"),
+  c("19","2800",".","C","G","100","PASS",".","GT","1|1","0|0","1|0","0|1","1|0"),
+  c("19","3100",".","G","T","100","PASS",".","GT","0|1","1|0","0|0","1|1","0|1"),
+  c("19","3400",".","T","A","100","PASS",".","GT","1|0","0|1","0|0","0|0","1|1")
+)
+writeLines(c(header, apply(variants, 1, paste, collapse = "\t")), vcf_path)
+
+# RFMix MSP: two ancestry tracts (AFR=0, EUR=1)
+#   tract 1 [1000,2500): S1=AFR|EUR  S2=EUR|AFR  S3=AFR|EUR  S4=EUR|EUR  S5=AFR|AFR
+#   tract 2 [2500,4000): S1=EUR|AFR  S2=AFR|EUR  S3=EUR|AFR  S4=AFR|EUR  S5=EUR|EUR
+msp_lines <- c(
+  paste(c("#Subpopulation order/codes: AFR=0", "EUR=1"), collapse = "\t"),
+  paste(c("#chm","spos","epos","sgpos","egpos","n snps",
+          "S1.0","S1.1","S2.0","S2.1","S3.0","S3.1",
+          "S4.0","S4.1","S5.0","S5.1"), collapse = "\t"),
+  paste(c("19","1000","2500","0.00","0.05","5",
+          "0","1","1","0","0","1","1","1","0","0"), collapse = "\t"),
+  paste(c("19","2500","4000","0.05","0.12","3",
+          "1","0","0","1","1","0","0","1","1","1"), collapse = "\t")
+)
+writeLines(msp_lines, msp_path)
+
+cat("VCF:  ", vcf_path, "\n")
+cat("MSP:  ", msp_path, "\n")
+```
+
+---
+
+## 2  Step 1: Split genotypes by ancestry
+
+`run_combined_pipeline()` parses the VCF and MSP **once** and returns both
+phased (deterministic) and unphased (proportional) dosage matrices for every
+population found in the MSP.
+
+```{r split, message=FALSE}
+combined <- run_combined_pipeline(
+  vcf_path = vcf_path,
+  msp_path = msp_path,
+  verbose  = FALSE
+)
+
+# Population names are taken directly from the MSP header
+pop_names <- setdiff(names(combined$phased),
+                     c("variant_info", "sample_ids", "overlap"))
+cat("Populations:", paste(pop_names, collapse = ", "), "\n")
+cat("Samples:    ", length(combined$phased$sample_ids), "\n")
+cat("Variants (phased split):", nrow(combined$phased$variant_info), "\n")
+```
+
+```{r inspect-split}
+cat("--- Phased AFR dosage (variants × samples) ---\n")
+print(combined$phased$AFR)
+
+cat("\n--- Phased EUR dosage ---\n")
+print(combined$phased$EUR)
+
+cat("\n--- Unphased AFR dosage ---\n")
+print(combined$unphased$AFR)
+
+# Sanity: phased and unphased totals should be equal
+total_ph <- Reduce("+", combined$phased[pop_names])
+total_un <- Reduce("+", combined$unphased[pop_names])
+cat("\nMax absolute difference between phased and unphased totals:",
+    max(abs(total_ph - total_un)), "\n")
+```
+
+The key difference between the two splits:
+
+| | Phased | Unphased |
+|---|---|---|
+| **Input** | per-haplotype GT + ancestry | diploid GT + diploid ancestry code |
+| **Method** | `split_phased_multi()` | `split_by_ancestry_multi()` |
+| **Accuracy** | Exact (deterministic) | Proportional (singletons → p=0.5 each) |
+| **Typical use** | Fine-mapping, haplotype tests | Standard burden tests |
+
+---
+
+## 3  Step 2: Write ancestry-specific GDS files
+
+`write_dosage_gds()` wraps the VCF → GDS conversion.  Each population gets its
+own GDS file which will be passed to SMMAT.
+
+```{r write-gds, message=FALSE}
+gds_dir <- file.path(tmp, "gds")
+dir.create(gds_dir)
+
+# Write one GDS per population for the phased split
+vi   <- combined$phased$variant_info   # chrom / pos / ref / alt
+ids  <- combined$phased$sample_ids
+
+gds_paths <- list()
+for (pop in pop_names) {
+  gds_paths[[pop]] <- file.path(gds_dir, paste0(pop, "_phased.gds"))
+  write_dosage_gds(combined$phased[[pop]], vi, ids, gds_paths[[pop]])
+}
+
+cat("GDS files written:\n")
+for (pop in pop_names) cat(" ", pop, "->", gds_paths[[pop]], "\n")
+```
+
+Verify one file contains the expected variant and sample counts:
+
+```{r verify-gds}
+gds <- seqOpen(gds_paths[["AFR"]])
+cat("Variants in AFR GDS:", seqSummary(gds, check = "none")$num.variant, "\n")
+cat("Samples  in AFR GDS:", seqSummary(gds, check = "none")$num.sample,  "\n")
+seqClose(gds)
+```
+
+---
+
+## 4  Step 3: Gene-group file
+
+SMMAT reads variant membership from a tab-delimited file (no header) with
+columns: **gene, chrom, pos, ref, alt, weight**.
+
+```{r gene-group}
+# Assign all 8 variants to one toy gene
+vi$gene   <- "MYGENE1"
+vi$weight <- 1   # equal weights; use Beta(1,25) MAF weights for SKAT-O
+
+gene_group_file <- file.path(tmp, "gene_groups.tsv")
+write.table(vi[, c("gene","chrom","pos","ref","alt","weight")],
+            gene_group_file, sep = "\t",
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+cat("Gene group file (all rows):\n")
+print(read.table(gene_group_file, sep = "\t",
+                 col.names = c("gene","chrom","pos","ref","alt","weight")))
+```
+
+---
+
+## 5  Step 4: Null model with GMMAT  *(requires GMMAT)*
+
+The null mixed model is fit **once** and shared across all SMMAT calls for
+every population and every gene.
+
+```{r null-model, eval=FALSE}
+library(GMMAT)
+
+# In real data replace diag(N) with your kinship / GRM matrix
+N      <- length(ids)
+Kmat   <- diag(N)
+rownames(Kmat) <- colnames(Kmat) <- ids
+
+# Simulate a case/control phenotype
+set.seed(1)
+df_pheno <- data.frame(id = ids, y = rbinom(N, 1, 0.4))
+
+model0 <- glmmkin(
+  y ~ 1,
+  data   = df_pheno,
+  kins   = Kmat,
+  id     = "id",
+  family = binomial(link = "logit")
+)
+# For a quantitative trait: family = gaussian(link = "identity")
+```
+
+> **Tip**: On large cohorts, fitting `glmmkin` with a dense kinship matrix
+> can take minutes.  Use the sparse `kins` argument (a `Matrix::sparseMatrix`)
+> for faster computation.
+
+---
+
+## 6  Step 5: SMMAT gene-level tests  *(requires GMMAT)*
+
+Run SMMAT separately for each ancestry and for the raw observed genotype.
+
+```{r smmat, eval=FALSE}
+run_smmat <- function(gds_file) {
+  SMMAT(
+    obj.nullmodel = model0,
+    gds.fn        = gds_file,
+    group.file    = gene_group_file,
+    MAF.range     = c(0, 0.05),   # rare variants only
+    miss.cutoff   = 1,            # keep variants with any missing rate
+    method        = "davies",
+    is.dosage     = TRUE,         # required for ancestry-specific dosage GDS
+    ncores        = 1L
+  )
+}
+
+# Run for each ancestry
+smmat_results <- lapply(gds_paths, run_smmat)
+
+# For comparison: observed (raw unphased) dosage — requires a separate GDS
+# built with the full diploid genotype matrix
+# smmat_obs <- SMMAT(..., is.dosage = FALSE)
+```
+
+Each result is a data frame with one row per gene and columns
+`gene`, `N.variant`, `N.sample`, `B`, `B.var`, `Q_B`, `p_B`, `Q_S`, `p_S`,
+`p_SMMAT` (omnibus p-value).
+
+Example output:
+```
+     gene N.variant N.sample          B      B.var       Q_B       p_B
+1 MYGENE1         8        5  0.0312148 0.00128942  7.554824 0.0059940
+       Q_S        p_S    p_SMMAT
+1 7.554824 0.00599399 0.00599399
+```
+
+---
+
+## 7  Step 6: Cauchy combination
+
+`cauchy_combine()` combines the per-ancestry SMMAT p-values for each gene into
+a single multi-ancestry p-value.  The test remains valid even when the
+ancestries are correlated (as they always are in admixed cohorts).
+
+```{r cauchy-demo}
+# Toy example: two-population combination
+p_afr <- 0.008   # hypothetical SMMAT p-value for AFR ancestry
+p_eur <- 0.042   # hypothetical SMMAT p-value for EUR ancestry
+
+p_multi <- cauchy_combine(c(p_afr, p_eur))
+cat(sprintf("AFR p = %.4f  |  EUR p = %.4f  |  combined p = %.4f\n",
+            p_afr, p_eur, p_multi))
+```
+
+```{r cauchy-table}
+# Simulate results for five genes
+set.seed(7)
+n_genes <- 5
+res_sim <- data.frame(
+  gene   = paste0("GENE", seq_len(n_genes)),
+  p_afr  = runif(n_genes, 1e-5, 0.5),
+  p_eur  = runif(n_genes, 1e-5, 0.5)
+)
+res_sim$p_cauchy <- mapply(function(a, e) cauchy_combine(c(a, e)),
+                           res_sim$p_afr, res_sim$p_eur)
+print(res_sim)
+```
+
+```{r cauchy-3pop}
+# Three-population example (AFR, EUR, NAT)
+cauchy_combine(c(0.005, 0.04, 0.30))
+
+# Weighted: give double weight to AFR if N_AFR > N_EUR
+cauchy_combine(c(0.005, 0.04), weights = c(2, 1))
+```
+
+In a full analysis this step replaces the loop over SMMAT results:
+
+```{r smmat-combine, eval=FALSE}
+# Collect p_SMMAT from each ancestry into a matrix (genes × pops)
+p_mat <- do.call(cbind, lapply(smmat_results, `[[`, "p_SMMAT"))
+rownames(p_mat) <- smmat_results[[1]]$gene
+
+# Apply Cauchy combination across populations for each gene
+p_cauchy_genes <- apply(p_mat, 1, cauchy_combine)
+results <- data.frame(
+  gene     = rownames(p_mat),
+  as.data.frame(p_mat),
+  p_cauchy = p_cauchy_genes
+)
+
+print(results[order(results$p_cauchy), ])
+```
+
+A gene is flagged as **ancestry-specific** when `p_cauchy` is significant but
+the ancestry-specific p-values differ strongly — e.g. `p_afr << p_eur` with
+`p_cauchy` driven primarily by the AFR signal.
+
+---
+
+## 8  Cleanup
+
+```{r cleanup}
+unlink(tmp, recursive = TRUE)
+```
+
+---
+
+## Quick reference
+
+| Step | Function | Package |
+|------|----------|---------|
+| Split genotypes | `run_combined_pipeline()` | lantern |
+| Write dosage GDS | `write_dosage_gds()` | lantern |
+| Fit null model | `glmmkin()` | GMMAT |
+| Run burden test | `SMMAT()` | GMMAT |
+| Combine p-values | `cauchy_combine()` | lantern |
+
+For the two-population unphased workflow (no phased VCF required) see
+`vignette("vcf-splitting")`.
+For K > 2 ancestries with phased data see `vignette("multi-ancestry-splitting")`.

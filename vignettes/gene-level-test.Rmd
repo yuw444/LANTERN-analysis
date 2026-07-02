@@ -92,57 +92,26 @@ cat("EUR mean per-variant dosage:", round(mean(ds_eur), 4), "\n")
 SMMAT reads variants from **SeqArray GDS** files with a `DS` (dosage) FORMAT
 field.  We create them from temporary VCFs.
 
-```{r write-vcf-helper}
-# Helper: write a minimal VCF with GT:DS format
-write_ds_vcf <- function(path, dosage_mat, sample_ids,
-                         chrom, positions, ref, alt) {
-  n_var  <- nrow(dosage_mat)
-  n_samp <- ncol(dosage_mat)
-  gt_map <- c("0/0", "0/1", "1/1")
-
-  header <- c(
-    "##fileformat=VCFv4.1",
-    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
-    paste0('##FORMAT=<ID=DS,Number=1,Type=Float,',
-           'Description="Ancestry-specific dosage of the alternate allele">'),
-    paste(c("#CHROM", "POS", "ID", "REF", "ALT",
-            "QUAL", "FILTER", "INFO", "FORMAT", sample_ids),
-          collapse = "\t")
-  )
-
-  data_lines <- vapply(seq_len(n_var), function(i) {
-    ds        <- dosage_mat[i, ]
-    gt_idx    <- pmin(2L, pmax(0L, as.integer(round(ds))))
-    gt_str    <- gt_map[gt_idx + 1L]
-    samp_flds <- paste0(gt_str, ":", sprintf("%.4f", ds))
-    paste(c(chrom, sprintf("%d", as.integer(positions[i])), ".", ref[i], alt[i],
-            ".", "PASS", ".", "GT:DS", samp_flds),
-          collapse = "\t")
-  }, character(1L))
-
-  writeLines(c(header, data_lines), path)
-}
-```
-
 ```{r create-gds, message=FALSE}
 library(SeqArray)
 
 # Variant metadata matching our simulated positions
-positions <- seq(1000000L, by = 500L, length.out = N_VAR)
+positions  <- seq(1000000L, by = 500L, length.out = N_VAR)
 ref_allele <- rep("A", N_VAR)
 alt_allele <- rep("T", N_VAR)
 
-# Create temporary VCF → GDS for each ancestry
-vcf_afr <- tempfile(fileext = ".vcf")
-vcf_eur <- tempfile(fileext = ".vcf")
+vi <- data.frame(
+  chrom = CHROM, pos = positions,
+  ref   = ref_allele, alt = alt_allele,
+  stringsAsFactors = FALSE
+)
+
 gds_afr <- tempfile(fileext = ".gds")
 gds_eur <- tempfile(fileext = ".gds")
 
-write_ds_vcf(vcf_afr, ds_afr, samp_id, CHROM, positions, ref_allele, alt_allele)
-write_ds_vcf(vcf_eur, ds_eur, samp_id, CHROM, positions, ref_allele, alt_allele)
-
-seqVCF2GDS(vcf_afr, gds_afr, verbose = FALSE)
-seqVCF2GDS(vcf_eur, gds_eur, verbose = FALSE)
+# write_dosage_gds() handles the VCF → GDS conversion
+write_dosage_gds(ds_afr, vi, samp_id, gds_afr)
+write_dosage_gds(ds_eur, vi, samp_id, gds_eur)
 
 cat("GDS files created:\n", gds_afr, "\n", gds_eur, "\n")
 ```
@@ -235,20 +204,15 @@ Each result is a data.frame with one row per gene and columns:
 ```{r smmat-combine, eval=FALSE}
 # Bind AA / EE / observed into a single data.frame for the gene
 combined <- data.frame(
-  gene     = res_aa$gene,
-  p_aa     = res_aa$p_SMMAT,
-  p_ee     = res_ee$p_SMMAT,
-  p_obs    = res_obs$p_SMMAT
+  gene  = res_aa$gene,
+  p_aa  = res_aa$p_SMMAT,
+  p_ee  = res_ee$p_SMMAT,
+  p_obs = res_obs$p_SMMAT
 )
 
-# Cauchy combination of AA and EE p-values into a multi-ancestry p-value
-cauchy_p <- function(p1, p2) {
-  # Han & Liu (2020) Cauchy combination test
-  T_stat <- 0.5 * (tan((0.5 - p1) * pi) + tan((0.5 - p2) * pi))
-  pcauchy(T_stat, lower.tail = FALSE)
-}
-
-combined$p_cauchy <- mapply(cauchy_p, combined$p_aa, combined$p_ee)
+# Cauchy combination of AA and EE p-values (see ?cauchy_combine)
+combined$p_cauchy <- mapply(function(a, e) cauchy_combine(c(a, e)),
+                             combined$p_aa, combined$p_ee)
 
 print(combined)
 ```
@@ -261,7 +225,7 @@ A significant `p_cauchy` with `p_aa` and/or `p_ee` more extreme than
 ## 7  Cleanup
 
 ```{r cleanup}
-unlink(c(vcf_afr, vcf_eur, gds_afr, gds_eur, gene_group_file))
+unlink(c(gds_afr, gds_eur, gene_group_file))
 ```
 
 ---

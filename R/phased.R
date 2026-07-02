@@ -543,9 +543,10 @@ run_phased_pipeline <- function(vcf_path, msp_path, out_path,
 #' Run phased and unphased ancestry splitting on the same BCF + MSP
 #'
 #' Parses the VCF/BCF and RFMix MSP file once, then runs both
-#' deterministic per-haplotype splitting (\code{\link{split_phased}}) and
-#' proportional diploid splitting (\code{\link{split_by_ancestry}}).
-#' Returns both results so that they can be compared directly.
+#' deterministic per-haplotype splitting (\code{\link{split_phased_multi}})
+#' and proportional diploid splitting
+#' (\code{\link{split_by_ancestry_multi}}).
+#' Works for any number of populations K \eqn{\ge} 2.
 #'
 #' @param vcf_path Path to a phased VCF or BCF file.
 #'   \code{bcftools} must be in \code{PATH}.
@@ -554,26 +555,20 @@ run_phased_pipeline <- function(vcf_path, msp_path, out_path,
 #'   If \code{NULL}, all chromosomes present in the VCF are used.
 #' @param verbose Print step-by-step progress messages.
 #'
-#' @return Invisibly, a list with two named elements:
-#'   \describe{
-#'     \item{\code{phased}}{Deterministic per-haplotype split via
-#'       \code{\link{split_phased}}: a list with \code{african},
-#'       \code{european} (variants \eqn{\times} samples integer matrices),
-#'       \code{variant_info}, \code{sample_ids}, and \code{overlap}.}
-#'     \item{\code{unphased}}{Proportional diploid split via
-#'       \code{\link{split_by_ancestry}} using MSP-derived ancestry codes:
-#'       same structure as \code{phased}.}
-#'   }
+#' @return Invisibly, a list with two named elements, \code{phased} and
+#'   \code{unphased}.  Each element is itself a list whose first K entries
+#'   are named dosage matrices (variants \eqn{\times} samples), one per
+#'   population in the order given by the MSP file (e.g. \code{$AFR},
+#'   \code{$EUR}).  Additional entries: \code{variant_info},
+#'   \code{sample_ids}, and \code{overlap}.
 #'
 #' @details
 #' Both splits share the same parsed MSP tracts and VCF genotypes.
-#' For the \strong{unphased} path the two haplotype alleles are summed to a
-#' diploid dosage (0/1/2) and per-haplotype population codes from the MSP are
-#' combined into diploid codes: AFR/AFR \eqn{\to} 3, EUR/EUR \eqn{\to} 1,
-#' mixed \eqn{\to} 2.  Only two-population MSP files are supported.
-#'
-#' Monomorphic variants are filtered independently in each mode, so the two
-#' \code{variant_info} frames may differ slightly in row count.
+#' Diploid ancestry codes are generated automatically from the MSP
+#' population codes: pure-ancestry codes are 1 \ldots K (one per
+#' population) and mixed-ancestry codes are K+1 \ldots K+M where
+#' M = K(K-1)/2 enumerates all unordered pairs.
+#' Monomorphic variants are filtered independently in each mode.
 #'
 #' @examples
 #' \dontrun{
@@ -582,8 +577,8 @@ run_phased_pipeline <- function(vcf_path, msp_path, out_path,
 #'   msp_path = "data/chr19.msp.tsv.gz",
 #'   chrom    = "chr19"
 #' )
-#' res$phased$african      # deterministic AFR dosage matrix
-#' res$unphased$african    # proportional AFR dosage matrix
+#' res$phased$AFR    # deterministic AFR dosage matrix
+#' res$unphased$AFR  # proportional AFR dosage matrix
 #' }
 #'
 #' @export
@@ -601,11 +596,11 @@ run_combined_pipeline <- function(vcf_path, msp_path, chrom = NULL,
   anc_hap1_mat <- msp_data$anc_hap1
   pop_codes    <- msp_data$pop_codes
   n_tracts     <- nrow(tract_df)
-  if (length(pop_codes) != 2)
-    stop("run_combined_pipeline requires exactly 2 populations in the MSP; ",
-         "use run_phased_pipeline() for K > 2")
+  K            <- length(pop_codes)
+  if (K < 2)
+    stop("run_combined_pipeline requires at least 2 populations in the MSP")
   if (verbose) message("  MSP samples: ", length(msp_samples),
-                       "  Tracts: ", n_tracts)
+                       "  Tracts: ", n_tracts, "  Populations: ", K)
 
   # ---- Step 2: VCF sample IDs ----
   if (verbose) message("\nStep 2: Querying VCF sample IDs...")
@@ -742,79 +737,94 @@ run_combined_pipeline <- function(vcf_path, msp_path, chrom = NULL,
     dropped_samples_msp     = dropped_msp
   )
 
-  # ---- Step 7a: Phased split ----
-  if (verbose) message("\nStep 7a: Splitting haplotypes by ancestry (phased)...")
-  res_ph <- split_phased(gt_hap0_mat, gt_hap1_mat,
-                          anc_hap0_var, anc_hap1_var,
-                          pop_codes = pop_codes)
-  afr_ph <- res_ph$african
-  eur_ph <- res_ph$european
+  # ---- Auto-generate diploid ancestry codes for K populations ----
+  # pure_codes_named: pop_name -> unique diploid code 1..K (pop index)
+  # mixed_codes_df : data.frame(code, pop1, pop2) for all K*(K-1)/2 pairs
+  # lookup[p0_idx, p1_idx] -> diploid code  (vectorised ancestry conversion)
+  pop_names        <- names(pop_codes)
+  hap_codes_v      <- as.integer(pop_codes)
+  pure_codes_named <- setNames(seq_len(K), pop_names)
+  pairs_mat        <- combn(K, 2)          # 2 × M
+  M                <- ncol(pairs_mat)
+  mixed_code_v     <- K + seq_len(M)
+  mixed_codes_df   <- data.frame(
+    code = as.integer(mixed_code_v),
+    pop1 = pop_names[pairs_mat[1L, ]],
+    pop2 = pop_names[pairs_mat[2L, ]],
+    stringsAsFactors = FALSE
+  )
+  lookup <- matrix(0L, nrow = K, ncol = K)
+  diag(lookup) <- seq_len(K)
+  for (m in seq_len(M)) {
+    i <- pairs_mat[1L, m]; j <- pairs_mat[2L, m]
+    lookup[i, j] <- mixed_code_v[m]
+    lookup[j, i] <- mixed_code_v[m]
+  }
 
-  has_alt_ph <- rowSums(afr_ph + eur_ph) > 0
+  # ---- Step 7a: Phased split (works for any K) ----
+  if (verbose) message("\nStep 7a: Splitting haplotypes by ancestry (phased)...")
+  res_ph <- split_phased_multi(gt_hap0_mat, gt_hap1_mat,
+                                anc_hap0_var, anc_hap1_var,
+                                pop_codes = pop_codes)
+  # res_ph: named list of K matrices (variants × samples)
+
+  total_ph   <- Reduce("+", res_ph)
+  has_alt_ph <- rowSums(total_ph) > 0
   n_mono_ph  <- sum(!has_alt_ph)
-  afr_ph <- afr_ph[has_alt_ph, , drop = FALSE]
-  eur_ph <- eur_ph[has_alt_ph, , drop = FALSE]
-  vi_ph  <- data.frame(chrom = vcf_chrom[has_alt_ph],
-                       pos   = vcf_pos[has_alt_ph],
-                       ref   = vcf_ref[has_alt_ph],
-                       alt   = vcf_alt[has_alt_ph],
-                       stringsAsFactors = FALSE)
-  if (verbose) message("  Phased: ", nrow(afr_ph), " variants kept (",
+  res_ph_f   <- lapply(res_ph, function(m) m[has_alt_ph, , drop = FALSE])
+  vi_ph      <- data.frame(chrom = vcf_chrom[has_alt_ph],
+                            pos   = vcf_pos[has_alt_ph],
+                            ref   = vcf_ref[has_alt_ph],
+                            alt   = vcf_alt[has_alt_ph],
+                            stringsAsFactors = FALSE)
+  if (verbose) message("  Phased: ", nrow(vi_ph), " variants kept (",
                        n_mono_ph, " monomorphic filtered)")
 
-  # ---- Step 7b: Unphased split ----
+  # ---- Step 7b: Unphased split (works for any K) ----
   if (verbose) message("\nStep 7b: Splitting diploid dosages by ancestry (unphased)...")
 
   gt_diploid <- gt_hap0_mat + gt_hap1_mat
 
-  # Derive diploid ancestry codes (1=EUR/EUR, 2=AFR/EUR, 3=AFR/AFR)
-  # from per-haplotype pop codes (pop_codes[1]=AFR code, pop_codes[2]=EUR code)
-  afr_hap_code <- pop_codes[[1]]
-  eur_hap_code <- pop_codes[[2]]
-  anc_diploid <- ifelse(
-    anc_hap0_var == afr_hap_code & anc_hap1_var == afr_hap_code, 3L,
-    ifelse(
-      anc_hap0_var == eur_hap_code & anc_hap1_var == eur_hap_code, 1L,
-      2L
-    )
-  )
+  # Convert per-haplotype codes to 1..K pop indices, then look up diploid code
+  p0_mat      <- matrix(match(as.vector(anc_hap0_var), hap_codes_v),
+                        nrow = n_variants, ncol = length(common_samples))
+  p1_mat      <- matrix(match(as.vector(anc_hap1_var), hap_codes_v),
+                        nrow = n_variants, ncol = length(common_samples))
+  anc_diploid <- matrix(lookup[cbind(as.vector(p0_mat), as.vector(p1_mat))],
+                        nrow = n_variants, ncol = length(common_samples))
 
-  res_un <- split_by_ancestry(gt_diploid, anc_diploid)
-  afr_un <- res_un$african
-  eur_un <- res_un$european
+  res_un <- split_by_ancestry_multi(gt_diploid, anc_diploid,
+                                     pure_codes_named, mixed_codes_df)
+  # res_un: named list of K matrices (variants × samples)
 
-  has_alt_un <- rowSums(afr_un + eur_un) > 0
+  total_un   <- Reduce("+", res_un)
+  has_alt_un <- rowSums(total_un) > 0
   n_mono_un  <- sum(!has_alt_un)
-  afr_un <- afr_un[has_alt_un, , drop = FALSE]
-  eur_un <- eur_un[has_alt_un, , drop = FALSE]
-  vi_un  <- data.frame(chrom = vcf_chrom[has_alt_un],
-                       pos   = vcf_pos[has_alt_un],
-                       ref   = vcf_ref[has_alt_un],
-                       alt   = vcf_alt[has_alt_un],
-                       stringsAsFactors = FALSE)
-  if (verbose) message("  Unphased: ", nrow(afr_un), " variants kept (",
+  res_un_f   <- lapply(res_un, function(m) m[has_alt_un, , drop = FALSE])
+  vi_un      <- data.frame(chrom = vcf_chrom[has_alt_un],
+                            pos   = vcf_pos[has_alt_un],
+                            ref   = vcf_ref[has_alt_un],
+                            alt   = vcf_alt[has_alt_un],
+                            stringsAsFactors = FALSE)
+  if (verbose) message("  Unphased: ", nrow(vi_un), " variants kept (",
                        n_mono_un, " monomorphic filtered)")
 
   if (verbose) message("\n=== Pipeline Complete ===\n")
 
   invisible(list(
-    phased = list(
-      african      = afr_ph,
-      european     = eur_ph,
+    phased   = c(res_ph_f, list(
       variant_info = vi_ph,
       sample_ids   = common_samples,
       overlap      = c(overlap_base,
-                       n_variants_kept        = nrow(afr_ph),
+                       n_variants_kept        = nrow(vi_ph),
                        n_monomorphic_filtered = n_mono_ph)
-    ),
-    unphased = list(
-      african      = afr_un,
-      european     = eur_un,
+    )),
+    unphased = c(res_un_f, list(
       variant_info = vi_un,
       sample_ids   = common_samples,
       overlap      = c(overlap_base,
-                       n_variants_kept        = nrow(afr_un),
+                       n_variants_kept        = nrow(vi_un),
                        n_monomorphic_filtered = n_mono_un)
-    )
+    ))
   ))
 }
