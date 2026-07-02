@@ -12,21 +12,30 @@
 #' Handles sample and variant mismatches by using only overlapping data.
 #' Memory efficient: single-pass subsetting using index vectors.
 #'
-#' @param gt_matrix Integer matrix of genotypes (rows=variants, cols=samples)
-#'   Values: 0=homozygous ref, 1=heterozygous, 2=homozygous alt
-#'   rownames: variant IDs (e.g., "chr:pos" or any identifier)
-#'   colnames: sample IDs
+#' @param gt_matrix Integer matrix of genotypes (rows=variants, cols=samples).
+#'   Values: 0=homozygous ref, 1=heterozygous, 2=homozygous alt.
+#'   rownames: variant IDs (e.g., \code{"chr:pos"}). colnames: sample IDs.
+#'   May be \code{NULL} when \code{vcf_path} and \code{msp_path} are supplied.
 #' @param pt_matrix Integer matrix of parent-of-origin ancestry codes
-#'   (rows=samples, cols=regions)
-#'   Values: 1=EUR/EUR, 2=AFR/EUR (mixed), 3=AFR/AFR
-#'   rownames: sample IDs (must match colnames of gt_matrix)
-#'   colnames: region IDs (e.g., "chr:start-end")
+#'   (rows=samples, cols=regions/variants).
+#'   Values: 1=EUR/EUR, 2=AFR/EUR (mixed), 3=AFR/AFR.
+#'   rownames: sample IDs (must match colnames of \code{gt_matrix}).
+#'   colnames: region IDs (e.g., \code{"chr:start-end"}).
+#'   May be \code{NULL} when \code{vcf_path} and \code{msp_path} are supplied.
+#' @param vcf_path Path to a phased VCF or BCF file.  When supplied together
+#'   with \code{msp_path}, the function builds the genotype and ancestry
+#'   matrices directly from these files (bcftools must be in PATH), bypassing
+#'   the \code{gt_matrix}/\code{pt_matrix} arguments.
+#' @param msp_path Path to an RFMix MSP file (plain text or gzipped TSV).
+#'   Used together with \code{vcf_path} as a shortcut input.
+#' @param chrom Chromosome name to restrict to (e.g. \code{"chr19"}).
+#'   Only used when \code{vcf_path}/\code{msp_path} are supplied.
 #' @param verbose Print progress messages (default TRUE)
 #'
 #' @return List with elements:
 #'   \item{african}{African ancestry-specific dosage matrix}
 #'   \item{european}{European ancestry-specific dosage matrix}
-#'   \item{counts}{List of ancestry counts per region}
+#'   \item{counts}{List of ancestry counts per region/sample}
 #'   \item{overlap}{Overlap information}
 #'
 #' @examples
@@ -43,8 +52,25 @@
 #' # Only sample_A and sample_B are kept (common to both)
 #' # Only chr1:100 and chr1:200 that overlap regions are kept
 #'
+#' \dontrun{
+#' # Shortcut: build matrices directly from VCF + MSP
+#' result <- run_ancestry_pipeline(vcf_path = "data/chr19.phased.bcf",
+#'                                  msp_path = "data/chr19.msp.tsv.gz",
+#'                                  chrom    = "chr19")
+#' }
+#'
 #' @export
-run_ancestry_pipeline <- function(gt_matrix, pt_matrix, verbose = TRUE) {
+run_ancestry_pipeline <- function(gt_matrix = NULL, pt_matrix = NULL,
+                                   vcf_path = NULL, msp_path = NULL,
+                                   chrom = NULL, verbose = TRUE) {
+
+  # ---- VCF/MSP shortcut path ----
+  if (!is.null(vcf_path) && !is.null(msp_path)) {
+    return(invisible(.run_ancestry_from_vcf_msp(vcf_path, msp_path,
+                                                 chrom, verbose)))
+  }
+  if (is.null(gt_matrix) || is.null(pt_matrix))
+    stop("Provide either (gt_matrix, pt_matrix) or (vcf_path, msp_path)")
 
   if (verbose) message("=== LANTERN Ancestry Pipeline ===\n")
 
@@ -388,4 +414,216 @@ create_ancestry_vcfs <- function(vcf_path, gt_matrix, pt_matrix,
   message("  European: ", out_european)
 
   invisible(c(african = out_african, european = out_european))
+}
+
+# ============================================================================
+# Internal: unphased pipeline from VCF + MSP
+# ============================================================================
+
+.run_ancestry_from_vcf_msp <- function(vcf_path, msp_path, chrom, verbose) {
+
+  if (verbose) message("=== LANTERN Ancestry Pipeline (VCF/MSP input) ===\n")
+
+  # ---- Step 1: Parse MSP ----
+  if (verbose) message("Step 1: Parsing RFMix MSP file...")
+  msp_data     <- .parse_msp(msp_path, verbose = verbose)
+  msp_samples  <- msp_data$sample_ids
+  tract_df     <- msp_data$tract_df
+  anc_hap0_mat <- msp_data$anc_hap0
+  anc_hap1_mat <- msp_data$anc_hap1
+  pop_codes    <- msp_data$pop_codes
+  if (length(pop_codes) != 2)
+    stop(".run_ancestry_from_vcf_msp requires exactly 2 populations in the MSP")
+  if (verbose) message("  MSP samples: ", length(msp_samples),
+                       "  Tracts: ", nrow(tract_df))
+
+  # ---- Step 2: VCF sample IDs ----
+  if (verbose) message("\nStep 2: Querying VCF sample IDs...")
+  vcf_samples <- tryCatch({
+    res <- system(paste0("bcftools query -l ", shQuote(vcf_path)),
+                  intern = TRUE, ignore.stderr = TRUE)
+    if (length(res) == 0) stop("bcftools query -l returned nothing")
+    res
+  }, error = function(e) stop("Could not read VCF sample IDs: ", e$message))
+  if (verbose) message("  VCF samples: ", length(vcf_samples))
+
+  # ---- Step 3: Intersect samples ----
+  if (verbose) message("\nStep 3: Intersecting samples...")
+  common_samples <- intersect(vcf_samples, msp_samples)
+  if (length(common_samples) == 0)
+    stop("No common samples between VCF and MSP")
+  dropped_vcf <- setdiff(vcf_samples, common_samples)
+  dropped_msp <- setdiff(msp_samples, common_samples)
+  if (verbose) message("  Common: ", length(common_samples))
+
+  anc_hap0_common <- anc_hap0_mat[common_samples, , drop = FALSE]
+  anc_hap1_common <- anc_hap1_mat[common_samples, , drop = FALSE]
+
+  # ---- Step 4: Parse VCF GT ----
+  if (verbose) message("\nStep 4: Parsing VCF genotypes...")
+  cmd_gt <- paste0(
+    "bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\n' ",
+    shQuote(vcf_path))
+  gt_output <- tryCatch(
+    system(cmd_gt, intern = TRUE, ignore.stderr = TRUE),
+    error = function(e) stop("bcftools query failed: ", e$message))
+  if (length(gt_output) == 0) stop("bcftools query returned no variants")
+  if (verbose) message("  ", length(gt_output), " variant lines read")
+
+  tmp_gt <- tempfile(fileext = ".tsv")
+  on.exit(unlink(tmp_gt), add = TRUE)
+  writeLines(gt_output, tmp_gt)
+  gt_dt <- data.table::fread(tmp_gt, header = FALSE, sep = "\t")
+
+  vcf_chrom <- gt_dt[[1]]
+  vcf_pos   <- as.integer(gt_dt[[2]])
+  vcf_ref   <- as.character(gt_dt[[3]])
+  vcf_alt   <- as.character(gt_dt[[4]])
+
+  is_biallelic <- !grepl(",", vcf_alt, fixed = TRUE)
+  n_multi <- sum(!is_biallelic)
+  if (n_multi > 0) {
+    if (verbose) message("  Skipping ", n_multi, " multiallelic variants")
+    vcf_chrom <- vcf_chrom[is_biallelic]; vcf_pos <- vcf_pos[is_biallelic]
+    vcf_ref   <- vcf_ref[is_biallelic];   vcf_alt <- vcf_alt[is_biallelic]
+    gt_dt     <- gt_dt[is_biallelic]
+  }
+  n_variants <- length(vcf_pos)
+
+  sample_idx <- match(common_samples, vcf_samples)
+  gt_mat_raw <- as.matrix(gt_dt[, 5:ncol(gt_dt), drop = FALSE])
+  gt_mat     <- gt_mat_raw[, sample_idx, drop = FALSE]
+
+  gt_parsed   <- .parse_phased_gt_matrix(gt_mat, n_variants,
+                                          length(common_samples),
+                                          common_samples, verbose = verbose)
+  gt_hap0_mat <- gt_parsed$hap0
+  gt_hap1_mat <- gt_parsed$hap1
+
+  n_missing <- sum(gt_parsed$missing)
+  if (n_missing > 0 && verbose)
+    message("  Missing GT: ", n_missing, " (treated as 0/0)")
+
+  # ---- Step 5: Map variants to tracts ----
+  if (verbose) message("\nStep 5: Mapping variants to ancestry tracts...")
+  vcf_chrom_clean   <- sub("^chr", "", vcf_chrom)
+  tract_chrom_clean <- sub("^chr", "", tract_df$chrom)
+
+  if (!is.null(chrom)) {
+    chrom_clean <- sub("^chr", "", chrom)
+    keep <- vcf_chrom_clean == chrom_clean
+    if (!any(keep)) stop("No variants on chromosome ", chrom)
+    vcf_chrom <- vcf_chrom[keep]; vcf_pos <- vcf_pos[keep]
+    vcf_ref   <- vcf_ref[keep];   vcf_alt <- vcf_alt[keep]
+    gt_hap0_mat <- gt_hap0_mat[keep, , drop = FALSE]
+    gt_hap1_mat <- gt_hap1_mat[keep, , drop = FALSE]
+    vcf_chrom_clean <- vcf_chrom_clean[keep]
+    n_variants <- sum(keep)
+    if (verbose) message("  Filtered to chrom ", chrom, ": ", n_variants,
+                         " variants")
+  }
+
+  tract_idx   <- findInterval(vcf_pos, tract_df$spos)
+  valid_tract <- tract_idx > 0
+  if (any(valid_tract))
+    valid_tract[valid_tract] <-
+      vcf_pos[valid_tract] <= tract_df$epos[tract_idx[valid_tract]]
+  valid_chrom <- if (!is.null(chrom)) {
+    rep(TRUE, length(tract_idx))
+  } else {
+    vapply(seq_along(tract_idx), function(i) {
+      tract_idx[i] > 0 &&
+        vcf_chrom_clean[i] == tract_chrom_clean[tract_idx[i]]
+    }, logical(1))
+  }
+  keep_var   <- valid_tract & valid_chrom
+  n_no_tract <- sum(!keep_var)
+  if (n_no_tract > 0 && verbose)
+    message("  Variants with no tract: ", n_no_tract, " (dropped)")
+
+  if (n_no_tract > 0) {
+    vcf_chrom   <- vcf_chrom[keep_var]; vcf_pos <- vcf_pos[keep_var]
+    vcf_ref     <- vcf_ref[keep_var];   vcf_alt <- vcf_alt[keep_var]
+    gt_hap0_mat <- gt_hap0_mat[keep_var, , drop = FALSE]
+    gt_hap1_mat <- gt_hap1_mat[keep_var, , drop = FALSE]
+    tract_idx   <- tract_idx[keep_var]
+    n_variants  <- sum(keep_var)
+  }
+  if (n_variants == 0) stop("No variants with valid ancestry tracts")
+
+  # ---- Step 6: Build diploid GT and ancestry matrices ----
+  if (verbose) message("\nStep 6: Building diploid genotype and ancestry matrices...")
+
+  gt_diploid <- gt_hap0_mat + gt_hap1_mat  # (n_variants x n_samples), values 0/1/2
+
+  # Broadcast tract ancestry to per-variant ancestry
+  afr_hap_code <- pop_codes[[1]]
+  eur_hap_code <- pop_codes[[2]]
+  anc_diploid <- matrix(0L, nrow = n_variants, ncol = length(common_samples))
+  for (i in seq_len(n_variants)) {
+    h0 <- anc_hap0_common[, tract_idx[i]]
+    h1 <- anc_hap1_common[, tract_idx[i]]
+    anc_diploid[i, ] <- ifelse(h0 == afr_hap_code & h1 == afr_hap_code, 3L,
+                        ifelse(h0 == eur_hap_code & h1 == eur_hap_code, 1L, 2L))
+  }
+  colnames(gt_diploid)  <- common_samples
+  colnames(anc_diploid) <- common_samples
+
+  # ---- Step 7: Filter monomorphic variants ----
+  if (verbose) message("\nStep 7: Filtering monomorphic variants...")
+  has_alt <- rowSums(gt_diploid) > 0
+  n_mono  <- sum(!has_alt)
+  if (n_mono > 0) {
+    if (verbose) message("  Removed ", n_mono, " monomorphic variants")
+    gt_diploid  <- gt_diploid[has_alt, , drop = FALSE]
+    anc_diploid <- anc_diploid[has_alt, , drop = FALSE]
+    vcf_chrom <- vcf_chrom[has_alt]; vcf_pos <- vcf_pos[has_alt]
+    vcf_ref   <- vcf_ref[has_alt];   vcf_alt <- vcf_alt[has_alt]
+  }
+  n_final <- length(vcf_pos)
+  if (n_final == 0) stop("All variants are monomorphic after filtering")
+  rownames(gt_diploid)  <- paste0(vcf_chrom, ":", vcf_pos)
+  rownames(anc_diploid) <- rownames(gt_diploid)
+
+  # ---- Step 8: Split by ancestry ----
+  if (verbose) message("\nStep 8: Splitting genotypes by ancestry...")
+  res <- split_by_ancestry(gt_diploid, anc_diploid)
+  if (verbose) {
+    message("  -> African dosage matrix: ", nrow(res$african), " x ",
+            ncol(res$african))
+    message("  -> European dosage matrix: ", nrow(res$european), " x ",
+            ncol(res$european))
+  }
+
+  # ---- Step 9: Count ancestries per sample ----
+  if (verbose) message("\nStep 9: Counting ancestries per sample...")
+  counts <- list(
+    african  = count_ancestry_codes(t(anc_diploid), 3L),
+    european = count_ancestry_codes(t(anc_diploid), 1L),
+    mixed    = count_ancestry_codes(t(anc_diploid), 2L)
+  )
+  if (verbose) {
+    message("  -> African (3): median = ", median(counts$african))
+    message("  -> European (1): median = ", median(counts$european))
+    message("  -> Mixed (2): median = ", median(counts$mixed))
+  }
+
+  if (verbose) message("\n=== Pipeline Complete ===\n")
+
+  list(
+    african  = res$african,
+    european = res$european,
+    counts   = counts,
+    overlap  = list(
+      n_samples_total          = length(vcf_samples) + length(msp_samples) -
+                                   length(common_samples),
+      n_samples_kept           = length(common_samples),
+      n_variants_total         = n_variants + n_mono,
+      n_variants_kept          = n_final,
+      n_multiallelic_filtered  = n_multi,
+      n_monomorphic_filtered   = n_mono,
+      n_no_tract               = n_no_tract,
+      dropped_samples          = unique(c(dropped_vcf, dropped_msp))
+    )
+  )
 }

@@ -4,19 +4,38 @@
 \alias{run_ancestry_pipeline}
 \title{lantern: High-Level Workflow Functions}
 \usage{
-run_ancestry_pipeline(gt_matrix, pt_matrix, verbose = TRUE)
+run_ancestry_pipeline(
+  gt_matrix = NULL,
+  pt_matrix = NULL,
+  vcf_path = NULL,
+  msp_path = NULL,
+  chrom = NULL,
+  verbose = TRUE
+)
 }
 \arguments{
-\item{gt_matrix}{Integer matrix of genotypes (rows=variants, cols=samples)
-Values: 0=homozygous ref, 1=heterozygous, 2=homozygous alt
-rownames: variant IDs (e.g., "chr:pos" or any identifier)
-colnames: sample IDs}
+\item{gt_matrix}{Integer matrix of genotypes (rows=variants, cols=samples).
+Values: 0=homozygous ref, 1=heterozygous, 2=homozygous alt.
+rownames: variant IDs (e.g., \code{"chr:pos"}). colnames: sample IDs.
+May be \code{NULL} when \code{vcf_path} and \code{msp_path} are supplied.}
 
 \item{pt_matrix}{Integer matrix of parent-of-origin ancestry codes
-(rows=samples, cols=regions)
-Values: 1=EUR/EUR, 2=AFR/EUR (mixed), 3=AFR/AFR
-rownames: sample IDs (must match colnames of gt_matrix)
-colnames: region IDs (e.g., "chr:start-end")}
+(rows=samples, cols=regions/variants).
+Values: 1=EUR/EUR, 2=AFR/EUR (mixed), 3=AFR/AFR.
+rownames: sample IDs (must match colnames of \code{gt_matrix}).
+colnames: region IDs (e.g., \code{"chr:start-end"}).
+May be \code{NULL} when \code{vcf_path} and \code{msp_path} are supplied.}
+
+\item{vcf_path}{Path to a phased VCF or BCF file.  When supplied together
+with \code{msp_path}, the function builds the genotype and ancestry
+matrices directly from these files (bcftools must be in PATH), bypassing
+the \code{gt_matrix}/\code{pt_matrix} arguments.}
+
+\item{msp_path}{Path to an RFMix MSP file (plain text or gzipped TSV).
+Used together with \code{vcf_path} as a shortcut input.}
+
+\item{chrom}{Chromosome name to restrict to (e.g. \code{"chr19"}).
+Only used when \code{vcf_path}/\code{msp_path} are supplied.}
 
 \item{verbose}{Print progress messages (default TRUE)}
 }
@@ -24,7 +43,7 @@ colnames: region IDs (e.g., "chr:start-end")}
 List with elements:
   \item{african}{African ancestry-specific dosage matrix}
   \item{european}{European ancestry-specific dosage matrix}
-  \item{counts}{List of ancestry counts per region}
+  \item{counts}{List of ancestry counts per region/sample}
   \item{overlap}{Overlap information}
 }
 \description{
@@ -49,5 +68,12 @@ pt <- matrix(c(3, 2, 1, 3, 2, 1), nrow = 3, ncol = 2,
 result <- run_ancestry_pipeline(gt, pt)
 # Only sample_A and sample_B are kept (common to both)
 # Only chr1:100 and chr1:200 that overlap regions are kept
+
+\dontrun{
+# Shortcut: build matrices directly from VCF + MSP
+result <- run_ancestry_pipeline(vcf_path = "data/chr19.phased.bcf",
+                                 msp_path = "data/chr19.msp.tsv.gz",
+                                 chrom    = "chr19")
+}
 
 }
