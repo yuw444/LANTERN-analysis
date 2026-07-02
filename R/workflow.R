@@ -465,9 +465,7 @@ write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
   vcf_path <- paste0(tools::file_path_sans_ext(gds_path), "_tmp_ds.vcf")
   on.exit(unlink(vcf_path), add = TRUE)
 
-  gt_map <- c("0/0", "0/1", "1/1")
-  con <- file(vcf_path, open = "wt")
-  writeLines(c(
+  header <- c(
     "##fileformat=VCFv4.2",
     '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
     paste0('##FORMAT=<ID=DS,Number=1,Type=Float,',
@@ -475,24 +473,33 @@ write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
     paste(c("#CHROM", "POS", "ID", "REF", "ALT",
             "QUAL", "FILTER", "INFO", "FORMAT", sample_ids),
           collapse = "\t")
-  ), con)
+  )
 
-  for (i in seq_len(n_var)) {
-    ds     <- dosage_mat[i, ]
-    gt_idx <- pmin(2L, pmax(0L, as.integer(round(ds))))
-    gt     <- gt_map[gt_idx + 1L]
-    sfields <- ifelse(is.na(ds), "./.:.",
-                      paste0(gt, ":", sprintf("%.6f", ds)))
-    writeLines(paste(c(variant_info$chrom[i],
-                       as.character(variant_info$pos[i]),
-                       ".",
-                       variant_info$ref[i],
-                       variant_info$alt[i],
-                       ".", "PASS", ".", "GT:DS",
-                       sfields),
-                     collapse = "\t"), con)
+  # Vectorised field construction (avoids per-row sprintf loop)
+  gt_map <- c("0/0", "0/1", "1/1")
+  gt_idx <- matrix(pmin(2L, pmax(0L, as.integer(round(dosage_mat)))),
+                   nrow = n_var, ncol = n_samp)
+  gt_mat <- matrix(gt_map[gt_idx + 1L], nrow = n_var, ncol = n_samp)
+
+  # Use compact integer format when all values are 0/1/2; otherwise 4 d.p.
+  if (all(dosage_mat == floor(dosage_mat), na.rm = TRUE)) {
+    ds_mat <- matrix(as.character(as.integer(dosage_mat)), nrow = n_var, ncol = n_samp)
+  } else {
+    ds_mat <- matrix(sprintf("%.4f", dosage_mat), nrow = n_var, ncol = n_samp)
   }
-  close(con)
+
+  sfields <- matrix(paste0(gt_mat, ":", ds_mat), nrow = n_var, ncol = n_samp)
+  if (anyNA(dosage_mat)) sfields[is.na(dosage_mat)] <- "./.:."
+
+  # Prefix columns (CHROM POS ID REF ALT QUAL FILTER INFO FORMAT)
+  pre <- cbind(variant_info$chrom,
+               as.character(variant_info$pos),
+               ".", variant_info$ref, variant_info$alt,
+               ".", "PASS", ".", "GT:DS")
+
+  # Combine and write in one shot
+  data_lines <- apply(cbind(pre, sfields), 1L, paste, collapse = "\t")
+  writeLines(c(header, data_lines), vcf_path)
 
   SeqArray::seqVCF2GDS(vcf_path, gds_path, verbose = FALSE)
   invisible(gds_path)
