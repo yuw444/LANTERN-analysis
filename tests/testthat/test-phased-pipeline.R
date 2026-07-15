@@ -1,6 +1,6 @@
 context("Phased pipeline")
 
-test_that("run_phased_pipeline works with synthetic data", {
+test_that("ancestry_split_phased works with synthetic data", {
   skip_if_not(file.exists(file.path(.libPaths()[1], "lantern/libs/lantern.so")),
               "lantern package not installed")
 
@@ -36,7 +36,7 @@ test_that("run_phased_pipeline works with synthetic data", {
   ), vcf)
 
   # Run pipeline
-  result <- run_phased_pipeline(
+  result <- ancestry_split_phased(
     vcf_path = vcf,
     msp_path = msp,
     out_path = td,
@@ -73,7 +73,7 @@ test_that("run_phased_pipeline works with synthetic data", {
   expect_true("pos" %in% names(result$variant_info))
 })
 
-test_that("run_phased_pipeline computes correct dosages", {
+test_that("ancestry_split_phased computes correct dosages", {
   td <- tempfile()
   dir.create(td, recursive = TRUE)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -103,7 +103,7 @@ test_that("run_phased_pipeline computes correct dosages", {
     "chr19\t150\t.\tA\tT\t.\tPASS\t.\tGT\t0|1\t1|0"
   ), vcf)
 
-  result <- run_phased_pipeline(vcf, msp, out_path = td, chrom = "chr19",
+  result <- ancestry_split_phased(vcf, msp, out_path = td, chrom = "chr19",
                                  write_vcf = FALSE, verbose = FALSE)
 
   # Check dosage values
@@ -113,7 +113,7 @@ test_that("run_phased_pipeline computes correct dosages", {
   expect_equal(result$european[1, 2], 1, tolerance = 1e-9)
 })
 
-test_that("run_phased_pipeline handles mixed ancestry", {
+test_that("ancestry_split_phased handles mixed ancestry", {
   td <- tempfile()
   dir.create(td, recursive = TRUE)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -142,7 +142,7 @@ test_that("run_phased_pipeline handles mixed ancestry", {
     "chr19\t200\t.\tG\tC\t.\tPASS\t.\tGT\t1|1\t0|0"
   ), vcf)
 
-  result <- run_phased_pipeline(vcf, msp, out_path = td, chrom = "chr19",
+  result <- ancestry_split_phased(vcf, msp, out_path = td, chrom = "chr19",
                                  write_vcf = FALSE, verbose = FALSE)
 
   expect_equal(result$african[1, 1], 1, tolerance = 1e-9)  # S1: AFR hap0 has alt
@@ -151,7 +151,7 @@ test_that("run_phased_pipeline handles mixed ancestry", {
   expect_equal(result$european[1, 2], 0, tolerance = 1e-9)  # S2: no alt
 })
 
-test_that("run_phased_pipeline filters monomorphic variants", {
+test_that("ancestry_split_phased filters monomorphic variants", {
   td <- tempfile()
   dir.create(td, recursive = TRUE)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -177,7 +177,7 @@ test_that("run_phased_pipeline filters monomorphic variants", {
     "chr19\t200\t.\tG\tC\t.\tPASS\t.\tGT\t0|0"
   ), vcf)
 
-  result <- run_phased_pipeline(vcf, msp, out_path = td, chrom = "chr19",
+  result <- ancestry_split_phased(vcf, msp, out_path = td, chrom = "chr19",
                                  write_vcf = FALSE, verbose = FALSE)
 
   expect_equal(result$overlap$n_monomorphic_filtered, 1)
@@ -185,7 +185,7 @@ test_that("run_phased_pipeline filters monomorphic variants", {
   expect_equal(result$overlap$n_variants_kept, 1)
 })
 
-test_that("run_phased_pipeline handles sample mismatch", {
+test_that("ancestry_split_phased handles sample mismatch", {
   td <- tempfile()
   dir.create(td, recursive = TRUE)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -211,7 +211,7 @@ test_that("run_phased_pipeline handles sample mismatch", {
     "chr19\t150\t.\tA\tT\t.\tPASS\t.\tGT\t0|1\t0|0"
   ), vcf)
 
-  result <- run_phased_pipeline(vcf, msp, out_path = td, chrom = "chr19",
+  result <- ancestry_split_phased(vcf, msp, out_path = td, chrom = "chr19",
                                  write_vcf = FALSE, verbose = FALSE)
 
   # Only S1 is common
@@ -221,7 +221,7 @@ test_that("run_phased_pipeline handles sample mismatch", {
   expect_true("S2" %in% result$overlap$dropped_samples_msp)
 })
 
-test_that("run_phased_pipeline errors on no common samples", {
+test_that("ancestry_split_phased errors on no common samples", {
   td <- tempfile()
   dir.create(td, recursive = TRUE)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -246,13 +246,13 @@ test_that("run_phased_pipeline errors on no common samples", {
   ), vcf)
 
   expect_error(
-    run_phased_pipeline(vcf, msp, out_path = td, chrom = "chr19",
+    ancestry_split_phased(vcf, msp, out_path = td, chrom = "chr19",
                         write_vcf = FALSE, verbose = FALSE),
     "No common samples"
   )
 })
 
-test_that("run_phased_pipeline handles variants outside tracts", {
+test_that("ancestry_split_phased handles variants outside tracts", {
   td <- tempfile()
   dir.create(td, recursive = TRUE)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -279,7 +279,7 @@ test_that("run_phased_pipeline handles variants outside tracts", {
     "chr19\t2000\t.\tG\tC\t.\tPASS\t.\tGT\t1|1"
   ), vcf)
 
-  result <- run_phased_pipeline(vcf, msp, out_path = td, chrom = "chr19",
+  result <- ancestry_split_phased(vcf, msp, out_path = td, chrom = "chr19",
                                  write_vcf = FALSE, verbose = FALSE)
 
   # Only variant at pos=500 should be kept

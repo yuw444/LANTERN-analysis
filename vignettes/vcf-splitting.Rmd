@@ -22,8 +22,8 @@ Two input modes are supported:
 
 | Mode | Input | Key function |
 |------|-------|-------------|
-| **Unphased** | Genotype matrix + per-variant ancestry code | `split_by_ancestry()` / `run_ancestry_pipeline()` |
-| **Phased** | Per-haplotype GT + per-haplotype ancestry | `split_phased()` / `run_phased_pipeline()` |
+| **Unphased** | Genotype matrix + per-variant ancestry code | `split_diploid()` / `ancestry_split_dosage()` |
+| **Phased** | Per-haplotype GT + per-haplotype ancestry | `split_haplotype()` / `ancestry_split_phased()` |
 
 ---
 
@@ -31,7 +31,7 @@ Two input modes are supported:
 
 ### 1.1  Anatomy of the input matrices
 
-`split_by_ancestry()` takes two matrices of identical dimensions:
+`split_diploid()` takes two matrices of identical dimensions:
 
 * **`gt_genotype`** — integer matrix, rows = variants, cols = samples.
   Values: 0 (hom-ref), 1 (het), 2 (hom-alt).
@@ -62,7 +62,7 @@ anc <- matrix(
   nrow = n_var, ncol = n_samp
 )
 
-result <- split_by_ancestry(gt, anc)
+result <- split_diploid(gt, anc)
 ```
 
 ```{r unphased-inspect}
@@ -96,14 +96,14 @@ individuals, p1 = p2 = 0.5 to avoid dividing by zero.
 gt_edge  <- matrix(c(1L, 0L, 1L), nrow = 1)   # three samples: het, ref, het
 anc_edge <- matrix(c(2L, 1L, 2L), nrow = 1)   # all alt carriers are MIX
 
-r <- split_by_ancestry(gt_edge, anc_edge)
+r <- split_diploid(gt_edge, anc_edge)
 cat("Singleton MIX case — p1 = p2 = 0.5\n")
 cat("African: ", r$african, "\nEuropean:", r$european, "\n")
 ```
 
-### 1.4  High-level pipeline (`run_ancestry_pipeline`)
+### 1.4  High-level pipeline (`ancestry_split_dosage`)
 
-`run_ancestry_pipeline()` wraps the splitting in a full pipeline that
+`ancestry_split_dosage()` wraps the splitting in a full pipeline that
 handles sample/variant overlap, monomorphic filtering, and optional VCF
 output.  Its inputs are:
 
@@ -135,7 +135,7 @@ pt_full <- matrix(
   )
 )
 
-out <- run_ancestry_pipeline(gt_full, pt_full, verbose = FALSE)
+out <- ancestry_split_dosage(gt_full, pt_full, verbose = FALSE)
 
 cat("African matrix: ", nrow(out$african), "variants ×",
     ncol(out$african), "samples\n")
@@ -153,7 +153,7 @@ When RFMix (or equivalent) provides **per-haplotype** local ancestry
 calls, LANTERN can deterministically assign each haplotype's allele to the
 correct ancestry background — no probabilistic splitting needed.
 
-### 2.1  Core function: `split_phased()`
+### 2.1  Core function: `split_haplotype()`
 
 Inputs are four matrices of the same shape (variants × samples):
 
@@ -188,7 +188,7 @@ a1 <- matrix(c(1L, 1L, 0L,
                1L, 0L, 1L),
              nrow = 3, ncol = 3)
 
-phased_result <- split_phased(gt0, gt1, a0, a1)
+phased_result <- split_haplotype(gt0, gt1, a0, a1)
 
 cat("African dosage (phased):\n"); print(phased_result$african)
 cat("European dosage (phased):\n"); print(phased_result$european)
@@ -198,9 +198,9 @@ The rule is simple: for each cell, hap0 contributes its allele to the AFR
 count if `anc_hap0 == 0`, to EUR if `anc_hap0 == 1`, and nothing
 otherwise.  Same for hap1.
 
-### 2.2  Full pipeline (`run_phased_pipeline`)
+### 2.2  Full pipeline (`ancestry_split_phased`)
 
-`run_phased_pipeline()` orchestrates the complete workflow from raw files:
+`ancestry_split_phased()` orchestrates the complete workflow from raw files:
 
 1. Parse the RFMix MSP file (ancestry tracts).
 2. Query sample IDs from the VCF via `bcftools`.
@@ -208,7 +208,7 @@ otherwise.  Same for hap1.
 4. Parse phased GT strings from VCF output.
 5. Map each variant to its ancestry tract with `findInterval()`.
 6. Broadcast tract-level ancestry to variant level.
-7. Call `split_phased()` via the C backend.
+7. Call `split_haplotype()` via the C backend.
 8. Filter monomorphic variants.
 9. Optionally write ancestry-specific VCFs with a DS (dosage) field
    and convert them to GDS format.
@@ -245,7 +245,7 @@ writeLines(c(
 ```
 
 ```{r phased-pipeline}
-result <- run_phased_pipeline(
+result <- ancestry_split_phased(
   vcf_path  = vcf_path,
   msp_path  = msp_path,
   out_path  = out_path,
@@ -281,7 +281,7 @@ The same call on a real cohort BCF + MSP (JHS chr19, 3313 samples, ~44 k
 variants — runs when the raw data files are present):
 
 ```{r phased-pipeline-real, eval=file.exists("../../raw/LANTERN.phased.bcf")}
-real_result <- run_phased_pipeline(
+real_result <- ancestry_split_phased(
   vcf_path  = "../../raw/LANTERN.phased.bcf",
   msp_path  = "../../raw/LANTERN_chr19.msp.tsv.gz",
   out_path  = tempfile(),
@@ -304,10 +304,10 @@ cat("Max EUR dosage (must be <= 2):", max(real_result$european), "\n")
 
 ---
 
-## 3  Combined pipeline (`run_combined_pipeline`)
+## 3  Combined pipeline (`ancestry_split_combined`)
 
 When you have a phased BCF and an RFMix MSP and want **both** phased and
-unphased dosage estimates in one call, `run_combined_pipeline()` is the
+unphased dosage estimates in one call, `ancestry_split_combined()` is the
 single-function shortcut.  It parses the VCF and MSP once and returns a
 named list with two elements, `$phased` and `$unphased`, each containing
 `african`, `european`, `variant_info`, `sample_ids`, and `overlap`.
@@ -318,7 +318,7 @@ matrix per population (named by the MSP population labels) plus
 `variant_info`, `sample_ids`, and `overlap`.
 
 ```{r combined-pipeline-synthetic}
-combined <- run_combined_pipeline(
+combined <- ancestry_split_combined(
   vcf_path = vcf_path,
   msp_path = msp_path,
   verbose  = FALSE
@@ -377,7 +377,7 @@ writeLines(c(
         collapse="\t")
 ), msp3)
 
-combined3 <- run_combined_pipeline(vcf3, msp3, verbose = FALSE)
+combined3 <- ancestry_split_combined(vcf3, msp3, verbose = FALSE)
 
 pop3 <- setdiff(names(combined3$phased),
                 c("variant_info", "sample_ids", "overlap"))
@@ -398,7 +398,7 @@ differ by a handful of rows.
 On the real JHS chr19 cohort (runs when raw files are present):
 
 ```{r combined-pipeline-real, eval=file.exists("../../raw/LANTERN.phased.bcf")}
-combined_real <- run_combined_pipeline(
+combined_real <- ancestry_split_combined(
   vcf_path = "../../raw/LANTERN.phased.bcf",
   msp_path = "../../raw/LANTERN_chr19.msp.tsv.gz",
   chrom    = "chr19",
@@ -437,4 +437,4 @@ cat("\nNote: totals differ slightly because phased assigns alleles\n",
 | **Splitting rule** | Probabilistic (p1/p2 proportions) | Deterministic | Both |
 | **Accuracy** | Good for intermediate-frequency variants | Better for rare variants | Side-by-side comparison |
 | **Required tools** | None (pure R + C) | `bcftools` | `bcftools` |
-| **Key function** | `run_ancestry_pipeline()` | `run_phased_pipeline()` | `run_combined_pipeline()` |
+| **Key function** | `ancestry_split_dosage()` | `ancestry_split_phased()` | `ancestry_split_combined()` |

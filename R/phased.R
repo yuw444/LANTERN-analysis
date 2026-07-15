@@ -2,7 +2,7 @@
 # Phased ancestry splitting
 # ============================================================================
 
-.split_phased <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
+.split_haplotype <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
                            pop_codes = c(AFR = 0L, EUR = 1L)) {
     storage.mode(gt_hap0)  <- "integer"
     storage.mode(gt_hap1)  <- "integer"
@@ -37,23 +37,23 @@
 #' gt1 <- matrix(c(0L, 1L, 1L, 0L), 2, 2)
 #' a0  <- matrix(c(0L, 1L, 0L, 1L), 2, 2)
 #' a1  <- matrix(c(1L, 0L, 1L, 0L), 2, 2)
-#' split_phased(gt0, gt1, a0, a1)
+#' split_haplotype(gt0, gt1, a0, a1)
 #'
 #' @export
-split_phased <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
+split_haplotype <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
                          pop_codes = c(AFR = 0L, EUR = 1L)) {
-    .split_phased(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)
+    .split_haplotype(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)
 }
 
 #' Split phased haplotypes into K population-specific dosage matrices
 #'
-#' Generalises \code{\link{split_phased}} to an arbitrary number of ancestries.
+#' Generalises \code{\link{split_haplotype}} to an arbitrary number of ancestries.
 #' Each haplotype's allele is routed to the dosage pool whose code matches its
 #' local ancestry call.  Haplotypes with unrecognised codes contribute 0 to
 #' all pools.  NA genotypes are treated as 0 (reference allele).
 #'
-#' For the two-population case \code{split_phased_multi} and \code{split_phased}
-#' are equivalent; prefer \code{split_phased_multi} for new code that may later
+#' For the two-population case \code{split_haplotype_multi} and \code{split_haplotype}
+#' are equivalent; prefer \code{split_haplotype_multi} for new code that may later
 #' be extended to three or more ancestries.
 #'
 #' @param gt_hap0 Integer matrix (variants x samples) of haplotype-0 alleles (0/1).
@@ -68,8 +68,8 @@ split_phased <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #'   entry in \code{pop_codes}, in the same order.  List names equal the
 #'   names of \code{pop_codes}.
 #'
-#' @seealso \code{\link{split_phased}} for the two-population convenience wrapper,
-#'   \code{\link{split_by_ancestry}} for unphased (diploid-code) splitting.
+#' @seealso \code{\link{split_haplotype}} for the two-population convenience wrapper,
+#'   \code{\link{split_diploid}} for unphased (diploid-code) splitting.
 #'
 #' @examples
 #' # Three-population panel: AFR=0, EUR=1, NAT=2
@@ -77,12 +77,12 @@ split_phased <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #' gt1 <- matrix(c(0L, 1L, 1L, 0L, 0L, 1L), nrow = 3, ncol = 2)
 #' a0  <- matrix(c(0L, 1L, 2L, 0L, 1L, 2L), nrow = 3, ncol = 2)
 #' a1  <- matrix(c(1L, 2L, 0L, 2L, 0L, 1L), nrow = 3, ncol = 2)
-#' out <- split_phased_multi(gt0, gt1, a0, a1, c(AFR = 0L, EUR = 1L, NAT = 2L))
+#' out <- split_haplotype_multi(gt0, gt1, a0, a1, c(AFR = 0L, EUR = 1L, NAT = 2L))
 #' names(out)   # "AFR" "EUR" "NAT"
 #' out$NAT      # native-ancestry dosage matrix
 #'
 #' @export
-split_phased_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
+split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
                                 pop_codes = c(AFR = 0L, EUR = 1L)) {
     if (is.null(names(pop_codes)))
         stop("pop_codes must be a named integer vector, e.g. c(AFR=0L, EUR=1L, NAT=2L)")
@@ -238,14 +238,14 @@ split_phased_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 }
 
 # ============================================================================
-# run_phased_pipeline
+# ancestry_split_phased
 # ============================================================================
 
 #' Run phased ancestry splitting pipeline
 #'
 #' Complete pipeline for phased data: parse an RFMix MSP file and a phased
 #' VCF, intersect samples, map each variant to its ancestry tract, call
-#' \code{\link{split_phased}} via the C backend, and optionally write
+#' \code{\link{split_haplotype}} via the C backend, and optionally write
 #' ancestry-specific VCFs with a DS field that can be converted to GDS.
 #'
 #' @param vcf_path Path to phased VCF/BCF file (plain or gzipped).
@@ -270,7 +270,7 @@ split_phased_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #'
 #' @examples
 #' \dontrun{
-#' result <- run_phased_pipeline(
+#' result <- ancestry_split_phased(
 #'   vcf_path = "data/chr19.phased.bcf",
 #'   msp_path = "data/chr19.msp.tsv.gz",
 #'   out_path = "output/",
@@ -281,7 +281,7 @@ split_phased_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #' }
 #'
 #' @export
-run_phased_pipeline <- function(vcf_path, msp_path, out_path,
+ancestry_split_phased <- function(vcf_path, msp_path, out_path,
                                 chrom = NULL, write_vcf = TRUE,
                                 verbose = TRUE) {
 
@@ -428,7 +428,7 @@ run_phased_pipeline <- function(vcf_path, msp_path, out_path,
 
   # ---- Step 7: Split phased ----
   if (verbose) message("\nStep 7: Splitting haplotypes by ancestry...")
-  res <- split_phased(gt_hap0_mat, gt_hap1_mat,
+  res <- split_haplotype(gt_hap0_mat, gt_hap1_mat,
                       anc_hap0_var, anc_hap1_var,
                       pop_codes = pop_codes)
   african_mat  <- res$african
@@ -537,15 +537,15 @@ run_phased_pipeline <- function(vcf_path, msp_path, out_path,
 }
 
 # ============================================================================
-# run_combined_pipeline
+# ancestry_split_combined
 # ============================================================================
 
 #' Run phased and unphased ancestry splitting on the same BCF + MSP
 #'
 #' Parses the VCF/BCF and RFMix MSP file once, then runs both
-#' deterministic per-haplotype splitting (\code{\link{split_phased_multi}})
+#' deterministic per-haplotype splitting (\code{\link{split_haplotype_multi}})
 #' and proportional diploid splitting
-#' (\code{\link{split_by_ancestry_multi}}).
+#' (\code{\link{split_diploid_multi}}).
 #' Works for any number of populations K \eqn{\ge} 2.
 #'
 #' @param vcf_path Path to a phased VCF or BCF file.
@@ -572,7 +572,7 @@ run_phased_pipeline <- function(vcf_path, msp_path, out_path,
 #'
 #' @examples
 #' \dontrun{
-#' res <- run_combined_pipeline(
+#' res <- ancestry_split_combined(
 #'   vcf_path = "data/chr19.phased.bcf",
 #'   msp_path = "data/chr19.msp.tsv.gz",
 #'   chrom    = "chr19"
@@ -582,7 +582,7 @@ run_phased_pipeline <- function(vcf_path, msp_path, out_path,
 #' }
 #'
 #' @export
-run_combined_pipeline <- function(vcf_path, msp_path, chrom = NULL,
+ancestry_split_combined <- function(vcf_path, msp_path, chrom = NULL,
                                    verbose = TRUE) {
 
   if (verbose) message("=== LANTERN Combined Ancestry Pipeline ===\n")
@@ -598,7 +598,7 @@ run_combined_pipeline <- function(vcf_path, msp_path, chrom = NULL,
   n_tracts     <- nrow(tract_df)
   K            <- length(pop_codes)
   if (K < 2)
-    stop("run_combined_pipeline requires at least 2 populations in the MSP")
+    stop("ancestry_split_combined requires at least 2 populations in the MSP")
   if (verbose) message("  MSP samples: ", length(msp_samples),
                        "  Tracts: ", n_tracts, "  Populations: ", K)
 
@@ -763,7 +763,7 @@ run_combined_pipeline <- function(vcf_path, msp_path, chrom = NULL,
 
   # ---- Step 7a: Phased split (works for any K) ----
   if (verbose) message("\nStep 7a: Splitting haplotypes by ancestry (phased)...")
-  res_ph <- split_phased_multi(gt_hap0_mat, gt_hap1_mat,
+  res_ph <- split_haplotype_multi(gt_hap0_mat, gt_hap1_mat,
                                 anc_hap0_var, anc_hap1_var,
                                 pop_codes = pop_codes)
   # res_ph: named list of K matrices (variants × samples)
@@ -793,7 +793,7 @@ run_combined_pipeline <- function(vcf_path, msp_path, chrom = NULL,
   anc_diploid <- matrix(lookup[cbind(as.vector(p0_mat), as.vector(p1_mat))],
                         nrow = n_variants, ncol = length(common_samples))
 
-  res_un <- split_by_ancestry_multi(gt_diploid, anc_diploid,
+  res_un <- split_diploid_multi(gt_diploid, anc_diploid,
                                      pure_codes_named, mixed_codes_df)
   # res_un: named list of K matrices (variants × samples)
 

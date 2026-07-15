@@ -44,5 +44,5 @@ Analytic p-Value Calculation Under Arbitrary Dependency Structures.
 \doi{10.1080/01621459.2019.1672715}
 }
 \seealso{
-\code{\link{write_dosage_gds}}, \code{\link{run_combined_pipeline}}
+\code{\link{write_dosage_gds}}, \code{\link{ancestry_split_combined}}
 }

@@ -75,7 +75,7 @@ anc_raw <- matrix(
   dimnames = dimnames(gt_raw)
 )
 
-split_out <- split_by_ancestry(gt_raw, anc_raw)
+split_out <- split_diploid(gt_raw, anc_raw)
 ds_afr <- split_out$african    # variants × samples, African ancestry dosage
 ds_eur <- split_out$european   # variants × samples, European ancestry dosage
 
@@ -236,7 +236,7 @@ unlink(c(gds_afr, gds_eur, gene_group_file))
 Phased VCF + RFMix MSP
          │
          ▼
-  run_phased_pipeline()
+  ancestry_split_phased()
          │
     ┌────┴────┐
     │         │

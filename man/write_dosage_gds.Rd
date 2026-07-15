@@ -13,7 +13,7 @@ Values should be in \eqn{[0, 2]}.}
 \item{variant_info}{Data frame with columns \code{chrom}, \code{pos},
 \code{ref}, \code{alt} (one row per variant in the same order as rows of
 \code{dosage_mat}).  Returned directly by
-\code{\link{run_combined_pipeline}} and \code{\link{run_phased_pipeline}}.}
+\code{\link{ancestry_split_combined}} and \code{\link{ancestry_split_phased}}.}
 
 \item{sample_ids}{Character vector of sample identifiers, length equal to
 \code{ncol(dosage_mat)}.}
@@ -31,7 +31,7 @@ The resulting GDS can be passed directly to \code{GMMAT::SMMAT()} via the
 }
 \examples{
 \dontrun{
-combined <- run_combined_pipeline("cohort.bcf", "cohort.msp.tsv")
+combined <- ancestry_split_combined("cohort.bcf", "cohort.msp.tsv")
 vi  <- combined$phased$variant_info
 ids <- combined$phased$sample_ids
 write_dosage_gds(combined$phased$AFR, vi, ids, "afr_phased.gds")
@@ -40,5 +40,5 @@ write_dosage_gds(combined$phased$EUR, vi, ids, "eur_phased.gds")
 
 }
 \seealso{
-\code{\link{run_combined_pipeline}}, \code{\link{cauchy_combine}}
+\code{\link{ancestry_split_combined}}, \code{\link{cauchy_combine}}
 }

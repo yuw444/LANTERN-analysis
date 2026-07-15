@@ -9,7 +9,7 @@ lantern/
 ├── DESCRIPTION / NAMESPACE        # package metadata
 ├── R/
 │   ├── lantern.R                  # C wrappers + exported R API
-│   └── workflow.R                 # run_ancestry_pipeline() (overlap handling, monomorphic filter)
+│   └── workflow.R                 # ancestry_split_dosage() (overlap handling, monomorphic filter)
 ├── src/                           # C backend — see lantern/src/AGENTS.md
 │   ├── ancestry.c                 # split_by_ancestry, count_ancestry_codes
 │   ├── ancestry.h                 # C function declarations
@@ -17,7 +17,7 @@ lantern/
 │   └── Makevars                   # PKG_CFLAGS = -O3 -march=native -Wall
 └── tests/testthat/
     ├── test-functions.R           # count_ancestry_codes + split_by_ancestry
-    └── test-workflow.R            # run_ancestry_pipeline (overlap, monomorphic)
+    └── test-workflow.R            # ancestry_split_dosage (overlap, monomorphic)
 ```
 
 ## EXPORTED R FUNCTIONS
@@ -26,7 +26,7 @@ lantern/
 |----------|-----------|---------------|
 | `count_ancestry_codes(mat, code)` | `R/lantern.R` | `count_ancestry_codes_C` |
 | `split_by_ancestry(gt, ancestry)` | `R/lantern.R` | `split_by_ancestry_C` |
-| `run_ancestry_pipeline(gt, pt, ...)` | `R/workflow.R` | (R-only, calls `split_by_ancestry`) |
+| `ancestry_split_dosage(gt, pt, ...)` | `R/workflow.R` | (R-only, calls `split_by_ancestry`) |
 | `write_vcf_with_ancestry(...)` | `R/lantern.R` | `write_vcf_with_ancestry_C` (registered but not used by tests) |
 | `subset_vcf_by_range(...)` | `R/lantern.R` | `subset_vcf_by_range_C` (registered but not used by tests) |
 

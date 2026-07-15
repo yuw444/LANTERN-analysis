@@ -19,11 +19,11 @@ test_that("count_ancestry_codes with different codes", {
   expect_equal(count_3[1] + count_1[1], 2)
 })
 
-test_that("split_by_ancestry returns correct structure", {
+test_that("split_diploid returns correct structure", {
   gt <- matrix(c(1, 2, 0, 1, 0, 2), nrow = 2, ncol = 3, byrow = TRUE)
   an <- matrix(c(3, 1, 2, 2, 1, 3), nrow = 2, ncol = 3, byrow = TRUE)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   expect_type(result, "list")
   expect_named(result, c("african", "european"))
@@ -31,11 +31,11 @@ test_that("split_by_ancestry returns correct structure", {
   expect_equal(dim(result$european), c(2, 3))
 })
 
-test_that("split_by_ancestry handles pure ancestries", {
+test_that("split_diploid handles pure ancestries", {
   gt <- matrix(c(1, 0, 2, 0), nrow = 2, ncol = 2)
   an <- matrix(c(3, 3, 1, 1), nrow = 2, ncol = 2)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   # var1, s1: gt=1, anc=3 (pure AFR) → african=1, european=0
   expect_equal(result$african[1, 1], 1)
@@ -47,17 +47,17 @@ test_that("split_by_ancestry handles pure ancestries", {
   expect_equal(result$european[2, 1], 0)
 })
 
-test_that("split_by_ancestry handles homozygous alt mixed ancestry", {
+test_that("split_diploid handles homozygous alt mixed ancestry", {
   gt <- matrix(c(2, 2, 2), nrow = 1, ncol = 3)
   an <- matrix(c(2, 2, 2), nrow = 1, ncol = 3)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   expect_equal(result$african[1, 1], 1.0)
   expect_equal(result$european[1, 1], 1.0)
 })
 
-test_that("split_by_ancestry p1/p2 calculation with known values", {
+test_that("split_diploid p1/p2 calculation with known values", {
   # For a variant with:
   # - 1 pure African het (pt=3, gt=1) -> N1=0, N2=1
   # - 1 mixed het (pt=2, gt=1) -> N4=0, N5=1
@@ -70,7 +70,7 @@ test_that("split_by_ancestry p1/p2 calculation with known values", {
   gt <- matrix(c(1, 1, 1), nrow = 1, ncol = 3)
   an <- matrix(c(3, 2, 1), nrow = 1, ncol = 3)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   expect_equal(result$african[1, 1], 1.0)  # Pure African het
   expect_equal(result$european[1, 3], 1.0)  # Pure European het
@@ -78,18 +78,18 @@ test_that("split_by_ancestry p1/p2 calculation with known values", {
   expect_equal(result$european[1, 2], 0.5)  # Mixed het -> p2 = 0.5
 })
 
-test_that("split_by_ancestry singleton case", {
+test_that("split_diploid singleton case", {
   # Singleton: only one het with mixed ancestry
   gt <- matrix(c(1), nrow = 1, ncol = 1)
   an <- matrix(c(2), nrow = 1, ncol = 1)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   expect_equal(result$african[1, 1], 0.5)
   expect_equal(result$european[1, 1], 0.5)
 })
 
-test_that("split_by_ancestry non-singleton mixed p1 calculation", {
+test_that("split_diploid non-singleton mixed p1 calculation", {
   # For a variant with:
   # - 2 pure African het (pt=3, gt=1) -> N1=0, N2=2
   # - 1 mixed het (pt=2, gt=1) -> N4=0, N5=1
@@ -102,7 +102,7 @@ test_that("split_by_ancestry non-singleton mixed p1 calculation", {
   gt <- matrix(c(1, 1, 1), nrow = 1, ncol = 3)
   an <- matrix(c(3, 3, 2), nrow = 1, ncol = 3)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   expect_equal(result$african[1, 1], 1.0)
   expect_equal(result$african[1, 2], 1.0)
@@ -114,17 +114,17 @@ test_that("NA and invalid codes handled", {
   gt <- matrix(c(0, 1, 2, 0), nrow = 2, ncol = 2)
   an <- matrix(c(3, 0, 1, 4), nrow = 2, ncol = 2)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   expect_equal(result$african[1, 1], 0)
   expect_equal(result$european[2, 1], 0)
 })
 
-test_that("split_by_ancestry homozygous alt pure ancestries", {
+test_that("split_diploid homozygous alt pure ancestries", {
   gt <- matrix(c(2, 2), nrow = 1, ncol = 2)
   an <- matrix(c(3, 1), nrow = 1, ncol = 2)
   
-  result <- split_by_ancestry(gt, an)
+  result <- split_diploid(gt, an)
   
   expect_equal(result$african[1, 1], 2.0)  # Homozygous alt with African
   expect_equal(result$european[1, 2], 2.0)  # Homozygous alt with European

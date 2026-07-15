@@ -48,19 +48,19 @@
 #'              dimnames = list(c("sample_A", "sample_B", "sample_D"),
 #'                             c("chr1:50-150", "chr1:150-250")))
 #'
-#' result <- run_ancestry_pipeline(gt, pt)
+#' result <- ancestry_split_dosage(gt, pt)
 #' # Only sample_A and sample_B are kept (common to both)
 #' # Only chr1:100 and chr1:200 that overlap regions are kept
 #'
 #' \dontrun{
 #' # Shortcut: build matrices directly from VCF + MSP
-#' result <- run_ancestry_pipeline(vcf_path = "data/chr19.phased.bcf",
+#' result <- ancestry_split_dosage(vcf_path = "data/chr19.phased.bcf",
 #'                                  msp_path = "data/chr19.msp.tsv.gz",
 #'                                  chrom    = "chr19")
 #' }
 #'
 #' @export
-run_ancestry_pipeline <- function(gt_matrix = NULL, pt_matrix = NULL,
+ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
                                    vcf_path = NULL, msp_path = NULL,
                                    chrom = NULL, verbose = TRUE) {
 
@@ -305,7 +305,7 @@ run_ancestry_pipeline <- function(gt_matrix = NULL, pt_matrix = NULL,
   # ========================================================================
   if (verbose) message("\nStep 4: Splitting genotypes by ancestry...")
 
-  result <- split_by_ancestry(gt_subset, pt_subset)
+  result <- split_diploid(gt_subset, pt_subset)
 
   # Capture post-filter variant count BEFORE removing gt_subset
   n_variants_kept_final <- nrow(gt_subset)
@@ -432,18 +432,18 @@ create_ancestry_vcfs <- function(vcf_path, gt_matrix, pt_matrix,
 #' @param variant_info Data frame with columns \code{chrom}, \code{pos},
 #'   \code{ref}, \code{alt} (one row per variant in the same order as rows of
 #'   \code{dosage_mat}).  Returned directly by
-#'   \code{\link{run_combined_pipeline}} and \code{\link{run_phased_pipeline}}.
+#'   \code{\link{ancestry_split_combined}} and \code{\link{ancestry_split_phased}}.
 #' @param sample_ids Character vector of sample identifiers, length equal to
 #'   \code{ncol(dosage_mat)}.
 #' @param gds_path Output file path for the GDS file (e.g. \code{"afr.gds"}).
 #'
 #' @return Invisibly returns \code{gds_path}.
 #'
-#' @seealso \code{\link{run_combined_pipeline}}, \code{\link{cauchy_combine}}
+#' @seealso \code{\link{ancestry_split_combined}}, \code{\link{cauchy_combine}}
 #'
 #' @examples
 #' \dontrun{
-#' combined <- run_combined_pipeline("cohort.bcf", "cohort.msp.tsv")
+#' combined <- ancestry_split_combined("cohort.bcf", "cohort.msp.tsv")
 #' vi  <- combined$phased$variant_info
 #' ids <- combined$phased$sample_ids
 #' write_dosage_gds(combined$phased$AFR, vi, ids, "afr_phased.gds")
@@ -543,7 +543,7 @@ write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
 #' # Apply across a results table (one gene per row)
 #' # mapply(cauchy_combine, split(cbind(p_aa, p_ee), seq_len(nrow(res))))
 #'
-#' @seealso \code{\link{write_dosage_gds}}, \code{\link{run_combined_pipeline}}
+#' @seealso \code{\link{write_dosage_gds}}, \code{\link{ancestry_split_combined}}
 #'
 #' @export
 cauchy_combine <- function(p_values, weights = NULL) {
@@ -737,7 +737,7 @@ cauchy_combine <- function(p_values, weights = NULL) {
 
   # ---- Step 8: Split by ancestry ----
   if (verbose) message("\nStep 8: Splitting genotypes by ancestry...")
-  res <- split_by_ancestry(gt_diploid, anc_diploid)
+  res <- split_diploid(gt_diploid, anc_diploid)
   if (verbose) {
     message("  -> African dosage matrix: ", nrow(res$african), " x ",
             ncol(res$african))

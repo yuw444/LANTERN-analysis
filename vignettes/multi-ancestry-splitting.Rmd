@@ -24,12 +24,12 @@ LANTERN provides two K-population splitting functions:
 
 | Mode | Function | Input | Method |
 |------|----------|-------|--------|
-| **Unphased** | `split_by_ancestry_multi()` | GT matrix + diploid code matrix | Proportional (p1 … pK estimated per variant) |
-| **Phased** | `split_phased_multi()` | Per-haplotype GT + per-haplotype ancestry | Deterministic |
+| **Unphased** | `split_diploid_multi()` | GT matrix + diploid code matrix | Proportional (p1 … pK estimated per variant) |
+| **Phased** | `split_haplotype_multi()` | Per-haplotype GT + per-haplotype ancestry | Deterministic |
 
 Both return a **named list of K matrices** (variants × samples), one per
 population.  The 2-population special case is numerically identical to
-`split_by_ancestry()` and `split_phased()` respectively.
+`split_diploid()` and `split_haplotype()` respectively.
 
 ---
 
@@ -99,7 +99,7 @@ anc <- matrix(
 ```
 
 ```{r split-3pop}
-out <- split_by_ancestry_multi(gt, anc, pure_codes, mixed_codes)
+out <- split_diploid_multi(gt, anc, pure_codes, mixed_codes)
 
 cat("Output list names:", names(out), "\n")
 cat("Dimensions (each matrix):", nrow(out$AFR), "variants x",
@@ -179,7 +179,7 @@ a 50/50 split within each affected pair.
 # One sample, one variant: AFR/EUR mixed het, no other data
 gt_s  <- matrix(1L, nrow = 1, ncol = 1)
 anc_s <- matrix(2L, nrow = 1, ncol = 1)   # code 2 = AFR/EUR
-r_s   <- split_by_ancestry_multi(gt_s, anc_s, pure_codes, mixed_codes)
+r_s   <- split_diploid_multi(gt_s, anc_s, pure_codes, mixed_codes)
 cat("Singleton AFR/EUR het -> AFR:", r_s$AFR[1,1],
     " EUR:", r_s$EUR[1,1],
     " NAT:", r_s$NAT[1,1], "\n")
@@ -195,7 +195,7 @@ population pool.  No probability estimation is needed.
 
 ### 2.1  Specifying populations
 
-`split_phased_multi()` takes a single named integer vector `pop_codes`
+`split_haplotype_multi()` takes a single named integer vector `pop_codes`
 of length K.  The codes must match those in the MSP file
 (RFMix default: 0-based integers).
 
@@ -231,7 +231,7 @@ anc_hap1 <- matrix(
   nrow = N_VAR2, ncol = N_SAMP2
 )
 
-phased_out <- split_phased_multi(gt_hap0, gt_hap1,
+phased_out <- split_haplotype_multi(gt_hap0, gt_hap1,
                                   anc_hap0, anc_hap1,
                                   pop_codes_phased)
 
@@ -253,8 +253,8 @@ exactly one pool; there is no probabilistic component.
 
 ### 2.3  Two-population equivalence
 
-`split_phased_multi()` with K = 2 is numerically identical to
-`split_phased()`.
+`split_haplotype_multi()` with K = 2 is numerically identical to
+`split_haplotype()`.
 
 ```{r phased-2pop-equiv}
 pop2 <- c(AFR = 0L, EUR = 1L)
@@ -263,8 +263,8 @@ gt1b <- matrix(c(0L,1L,0L,1L), 2, 2)
 a0b  <- matrix(c(0L,1L,0L,1L), 2, 2)
 a1b  <- matrix(c(1L,0L,1L,0L), 2, 2)
 
-m2 <- split_phased_multi(gt0b, gt1b, a0b, a1b, pop2)
-p2 <- split_phased(gt0b, gt1b, a0b, a1b, pop2)
+m2 <- split_haplotype_multi(gt0b, gt1b, a0b, a1b, pop2)
+p2 <- split_haplotype(gt0b, gt1b, a0b, a1b, pop2)
 
 cat("AFR identical:", identical(unname(m2$AFR), p2$african), "\n")
 cat("EUR identical:", identical(unname(m2$EUR), p2$european), "\n")
@@ -274,7 +274,7 @@ cat("EUR identical:", identical(unname(m2$EUR), p2$european), "\n")
 
 ## 3  Choosing between unphased and phased multi-ancestry
 
-| | `split_by_ancestry_multi()` | `split_phased_multi()` |
+| | `split_diploid_multi()` | `split_haplotype_multi()` |
 |---|---|---|
 | **Ancestry input** | Diploid code per variant | Per-haplotype code from RFMix |
 | **Splitting rule** | Proportional (p_k estimated per variant) | Deterministic |
@@ -298,7 +298,7 @@ mixed_4 <- data.frame(
   pop1 = c("AFR","AFR","AFR","EUR","EUR","NAT"),
   pop2 = c("EUR","NAT","EAS","NAT","EAS","EAS")
 )
-# split_by_ancestry_multi(gt, anc, pure_4, mixed_4) → list of 4 matrices
+# split_diploid_multi(gt, anc, pure_4, mixed_4) → list of 4 matrices
 
 # Five populations: AFR, EUR, NAT, EAS, SAS
 pure_5  <- c(AFR=3L, EUR=1L, NAT=4L, EAS=5L, SAS=6L)
@@ -309,5 +309,5 @@ There are K(K−1)/2 mixed-pair codes for K populations.  For K = 4 that
 is 6 codes; for K = 5 it is 10.  The `mixed_codes` data frame must list
 all of them.
 
-See `?split_by_ancestry_multi` and `?split_phased_multi` for full
+See `?split_diploid_multi` and `?split_haplotype_multi` for full
 argument documentation.

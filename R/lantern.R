@@ -6,7 +6,7 @@
 #' @section Functions:
 #' \describe{
 #'   \item{\code{count_ancestry_codes()}}{Count ancestry codes in matrix}
-#'   \item{\code{split_by_ancestry()}}{Split genotype by ancestry}
+#'   \item{\code{split_diploid()}}{Split genotype by ancestry}
 #'   \item{\code{write_vcf_with_ancestry()}}{Write VCF with ancestry annotations}
 #' }
 #'
@@ -27,7 +27,7 @@ NULL
     .Call("count_ancestry_codes_C", mat, code, PACKAGE = "lantern")
 }
 
-.split_by_ancestry <- function(gt_genotype, ancestry) {
+.split_diploid <- function(gt_genotype, ancestry) {
     storage.mode(gt_genotype) <- "integer"
     storage.mode(ancestry) <- "integer"
     .Call("split_by_ancestry_C", gt_genotype, ancestry, PACKAGE = "lantern")
@@ -96,18 +96,18 @@ count_ancestry_codes <- function(mat, code) {
 #' ancestry <- matrix(c(3, 2, 1, 3, 2, 1, 2, 2, 1, 1,
 #'                      3, 1, 2, 1, 3, 2, 1, 2, 1, 3), nrow = 5, ncol = 4)
 #'
-#' result <- split_by_ancestry(gt, ancestry)
+#' result <- split_diploid(gt, ancestry)
 #' result$african
 #' result$european
 #'
 #' @export
-split_by_ancestry <- function(gt_genotype, ancestry) {
-    .split_by_ancestry(gt_genotype, ancestry)
+split_diploid <- function(gt_genotype, ancestry) {
+    .split_diploid(gt_genotype, ancestry)
 }
 
 #' Split unphased genotype matrix by ancestry for K populations
 #'
-#' Generalises \code{\link{split_by_ancestry}} to an arbitrary number of
+#' Generalises \code{\link{split_diploid}} to an arbitrary number of
 #' ancestries.  For each variant, population allele proportions
 #' \eqn{p_1, \ldots, p_K} (summing to 1) are estimated from samples with
 #' unambiguous ancestry (pure-ancestry homozygotes and heterozygotes, plus
@@ -139,8 +139,8 @@ split_by_ancestry <- function(gt_genotype, ancestry) {
 #'   population in \code{pure_codes}, in the same order.  Each element is
 #'   named after the corresponding entry in \code{pure_codes}.
 #'
-#' @seealso \code{\link{split_by_ancestry}} for the hardcoded 2-population
-#'   (AFR + EUR) wrapper; \code{\link{split_phased_multi}} for the phased
+#' @seealso \code{\link{split_diploid}} for the hardcoded 2-population
+#'   (AFR + EUR) wrapper; \code{\link{split_haplotype_multi}} for the phased
 #'   K-population analogue.
 #'
 #' @examples
@@ -156,11 +156,11 @@ split_by_ancestry <- function(gt_genotype, ancestry) {
 #' mixed <- data.frame(code = c(2L, 5L, 6L),
 #'                     pop1 = c("AFR", "AFR", "EUR"),
 #'                     pop2 = c("EUR", "NAT", "NAT"))
-#' out <- split_by_ancestry_multi(gt, anc, pure, mixed)
+#' out <- split_diploid_multi(gt, anc, pure, mixed)
 #' names(out)   # "AFR" "EUR" "NAT"
 #'
 #' @export
-split_by_ancestry_multi <- function(gt_genotype, ancestry,
+split_diploid_multi <- function(gt_genotype, ancestry,
                                      pure_codes, mixed_codes) {
     if (is.null(names(pure_codes)))
         stop("pure_codes must be a named integer vector, e.g. c(AFR=3L, EUR=1L)")

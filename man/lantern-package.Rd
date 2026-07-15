@@ -13,7 +13,7 @@ with pure C backend for performance-critical operations.
 
 \describe{
   \item{\code{count_ancestry_codes()}}{Count ancestry codes in matrix}
-  \item{\code{split_by_ancestry()}}{Split genotype by ancestry}
+  \item{\code{split_diploid()}}{Split genotype by ancestry}
   \item{\code{write_vcf_with_ancestry()}}{Write VCF with ancestry annotations}
 }
 }

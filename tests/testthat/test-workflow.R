@@ -1,6 +1,6 @@
 context("Workflow functions - overlap handling")
 
-test_that("run_ancestry_pipeline handles sample overlap", {
+test_that("ancestry_split_dosage handles sample overlap", {
   # GT: 3 samples (A, B, C)
   # PT: 3 samples (A, B, D)
   # Expected: only A and B are common
@@ -12,7 +12,7 @@ test_that("run_ancestry_pipeline handles sample overlap", {
                dimnames = list(c("sample_A", "sample_B", "sample_D"),
                                c("var1", "var2")))
 
-  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
+  result <- ancestry_split_dosage(gt, pt, verbose = FALSE)
 
   # Check overlap info
   expect_type(result, "list")
@@ -26,7 +26,7 @@ test_that("run_ancestry_pipeline handles sample overlap", {
   expect_equal(nrow(result$african), 2)  # 2 common variants
 })
 
-test_that("run_ancestry_pipeline handles coordinate-based variant matching", {
+test_that("ancestry_split_dosage handles coordinate-based variant matching", {
   # GT variants: chr22:100, chr22:200, chr22:300
   # PT regions: chr22:50-150, chr22:150-250
   # Expected: chr22:100 matches chr22:50-150, chr22:200 matches chr22:150-250
@@ -39,7 +39,7 @@ test_that("run_ancestry_pipeline handles coordinate-based variant matching", {
                dimnames = list(c("s1", "s2", "s3"),
                                c("chr22:50-150", "chr22:150-250")))
 
-  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
+  result <- ancestry_split_dosage(gt, pt, verbose = FALSE)
 
   # Only 2 variants should match
   expect_equal(result$overlap$n_variants_kept, 2)
@@ -47,7 +47,7 @@ test_that("run_ancestry_pipeline handles coordinate-based variant matching", {
   expect_equal(ncol(result$african), 3)
 })
 
-test_that("run_ancestry_pipeline returns correct counts", {
+test_that("ancestry_split_dosage returns correct counts", {
   gt <- matrix(c(2, 1, 0, 1), nrow = 2, ncol = 2,
                dimnames = list(c("var1", "var2"),
                                c("s1", "s2")))
@@ -56,7 +56,7 @@ test_that("run_ancestry_pipeline returns correct counts", {
                dimnames = list(c("s1", "s2"),
                                c("var1", "var2")))
 
-  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
+  result <- ancestry_split_dosage(gt, pt, verbose = FALSE)
 
   expect_true("counts" %in% names(result))
   expect_true("african" %in% names(result$counts))
@@ -64,25 +64,25 @@ test_that("run_ancestry_pipeline returns correct counts", {
   expect_true("mixed" %in% names(result$counts))
 })
 
-test_that("run_ancestry_pipeline handles unnamed matrices", {
+test_that("ancestry_split_dosage handles unnamed matrices", {
   # Unnamed matrices - positional matching by order
   gt <- matrix(c(2, 1, 0, 1, 2, 1), nrow = 2, ncol = 3)
   pt <- matrix(c(3, 2, 1, 3, 2, 1), nrow = 3, ncol = 2)
 
-  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
+  result <- ancestry_split_dosage(gt, pt, verbose = FALSE)
 
   expect_equal(result$overlap$n_samples_kept, 3)
   expect_equal(result$overlap$n_variants_kept, 2)
 })
 
-test_that("run_ancestry_pipeline stops on no common samples", {
+test_that("ancestry_split_dosage stops on no common samples", {
   gt <- matrix(0, nrow = 2, ncol = 2,
                dimnames = list(c("v1", "v2"), c("s1", "s2")))
 
   pt <- matrix(1, nrow = 2, ncol = 2,
                dimnames = list(c("s3", "s4"), c("v1", "v2")))
 
-  expect_error(run_ancestry_pipeline(gt, pt, verbose = FALSE),
+  expect_error(ancestry_split_dosage(gt, pt, verbose = FALSE),
                "No common samples found")
 })
 
@@ -93,14 +93,14 @@ test_that("result contains all expected elements", {
   pt <- matrix(c(3, 1, 2, 2), nrow = 2, ncol = 2,
                dimnames = list(c("s1", "s2"), c("v1", "v2")))
 
-  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
+  result <- ancestry_split_dosage(gt, pt, verbose = FALSE)
 
   expect_named(result, c("african", "european", "counts", "overlap"))
   expect_equal(dim(result$african), c(2, 2))
   expect_equal(dim(result$european), c(2, 2))
 })
 
-test_that("run_ancestry_pipeline filters monomorphic variants", {
+test_that("ancestry_split_dosage filters monomorphic variants", {
   # GT: var1 has alt alleles, var2 is monomorphic (all 0)
   gt <- matrix(c(2, 0, 0, 0, 0, 0), nrow = 2, ncol = 3,
                dimnames = list(c("var1", "var2"),
@@ -110,7 +110,7 @@ test_that("run_ancestry_pipeline filters monomorphic variants", {
                dimnames = list(c("s1", "s2", "s3"),
                                c("var1", "var2")))
 
-  result <- run_ancestry_pipeline(gt, pt, verbose = FALSE)
+  result <- ancestry_split_dosage(gt, pt, verbose = FALSE)
 
   # var2 should be filtered out
   expect_equal(result$overlap$n_monomorphic_filtered, 1)
@@ -118,7 +118,7 @@ test_that("run_ancestry_pipeline filters monomorphic variants", {
   expect_equal(nrow(result$african), 1)
 })
 
-test_that("run_ancestry_pipeline errors if all variants are monomorphic", {
+test_that("ancestry_split_dosage errors if all variants are monomorphic", {
   gt <- matrix(0, nrow = 3, ncol = 2,
                dimnames = list(c("v1", "v2", "v3"),
                                c("s1", "s2")))
@@ -127,6 +127,6 @@ test_that("run_ancestry_pipeline errors if all variants are monomorphic", {
                dimnames = list(c("s1", "s2"),
                                c("v1", "v2", "v3")))
 
-  expect_error(run_ancestry_pipeline(gt, pt, verbose = FALSE),
+  expect_error(ancestry_split_dosage(gt, pt, verbose = FALSE),
                "All variants are monomorphic")
 })

@@ -30,7 +30,7 @@ The same code applies to any cohort with a phased VCF and an RFMix MSP file.
 Phased VCF/BCF  +  RFMix MSP
           │
           ▼
-  run_combined_pipeline()         ← ~3 min on chr19 / 3 313 samples
+  ancestry_split_combined()         ← ~3 min on chr19 / 3 313 samples
           │
    ┌──────┴──────┐
 phased split  unphased split     ← per-population dosage matrices
@@ -53,7 +53,7 @@ the GMMAT GitHub or Bioconductor).
 
 ## 1  Split genotypes by local ancestry
 
-`run_combined_pipeline()` parses the BCF and the RFMix MSP file once and
+`ancestry_split_combined()` parses the BCF and the RFMix MSP file once and
 returns ancestry-stratified dosage matrices for both the phased and unphased
 splitting methods.  The phased split is deterministic (each haplotype's dosage
 goes to the population of that haplotype); the unphased split is proportional
@@ -66,7 +66,7 @@ cache_rds <- file.path(RAW, "chr19_combined_split.rds")
 if (file.exists(cache_rds)) {
   combined <- readRDS(cache_rds)
 } else {
-  combined <- run_combined_pipeline(
+  combined <- ancestry_split_combined(
     vcf_path = file.path(RAW, "LANTERN.phased.bcf"),
     msp_path = file.path(RAW, "LANTERN_chr19.msp.tsv.gz"),
     chrom    = "chr19",
@@ -413,7 +413,7 @@ cat(sprintf("%-35s %.3g\n","Min Cauchy p-value",              min(results$p_cauc
 
 | Step | Function | Package |
 |------|----------|---------|
-| Split genotypes | `run_combined_pipeline()` | lantern |
+| Split genotypes | `ancestry_split_combined()` | lantern |
 | Write dosage GDS | `write_dosage_gds()` | lantern |
 | Fit null GLMM | `glmmkin()` | GMMAT |
 | Gene burden test | `SMMAT()` | GMMAT |

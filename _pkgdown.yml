@@ -35,9 +35,9 @@ reference:
       Functions for diploid genotype matrices where ancestry is summarised
       as a per-variant diploid code.
     contents:
-      - split_by_ancestry
-      - split_by_ancestry_multi
-      - run_ancestry_pipeline
+      - split_diploid
+      - split_diploid_multi
+      - ancestry_split_dosage
       - count_ancestry_codes
 
   - title: "Phased splitting"
@@ -45,10 +45,10 @@ reference:
       Functions for phased data where per-haplotype local ancestry is
       available (e.g. from RFMix).  Splitting is deterministic.
     contents:
-      - split_phased
-      - split_phased_multi
-      - run_phased_pipeline
-      - run_combined_pipeline
+      - split_haplotype
+      - split_haplotype_multi
+      - ancestry_split_phased
+      - ancestry_split_combined
 
   - title: "VCF utilities"
     desc: Write and subset ancestry-specific VCF files.
