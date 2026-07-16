@@ -11,7 +11,7 @@ vignette: >
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(lantern)
 library(SeqArray)
-RAW      <- "../../raw"
+RAW      <- "/scratch/g/pauer/Yu/LANTERN/raw"
 HAS_DATA <- file.exists(file.path(RAW, "LANTERN.phased.bcf"))
 HAS_GDS  <- file.exists(file.path(RAW, "chr19_AFR_phased.gds"))
 HAS_RDS  <- file.exists(file.path(RAW, "chr19_combined_split.rds"))
@@ -19,6 +19,7 @@ HAS_SMMAT_CACHE    <- file.exists(file.path(RAW, "smmat_AFR_phased.rds"))
 HAS_SMMAT_UNPHASED <- file.exists(file.path(RAW, "smmat_AFR_unphased.rds"))
 HAS_GMMAT <- requireNamespace("GMMAT", quietly = TRUE)
 ```
+
 
 ## Overview
 
@@ -109,6 +110,7 @@ for (p in pop_names) {
 }
 ```
 
+
 The table above shows that 39 089 of the 44 271 variants have at least one
 AFR-ancestry carrier (vs. 16 236 EUR-ancestry carriers), reflecting the
 predominantly African-American ancestry of the JHS cohort (median per-sample
@@ -131,6 +133,7 @@ frac_afr <- afr_sum / (afr_sum + eur_sum + .Machine$double.eps)
 cat("Per-sample AFR dosage fraction (quantiles):\n")
 print(round(quantile(frac_afr, c(0.05, 0.25, 0.50, 0.75, 0.95)), 3))
 ```
+
 
 The quantiles confirm the JHS is an African-American cohort: even the 5th
 percentile is ~50 % AFR ancestry.  LANTERN's ancestry-stratified approach
@@ -171,6 +174,7 @@ cat("AFR phased GDS:  variants =", sm$num.variant,
 seqClose(gds)
 ```
 
+
 ---
 
 ## 4  Gene-group file
@@ -193,6 +197,7 @@ cat("Chrom:    ", unique(genes$chrom), "\n\n")
 cat("First gene (A1BG):\n")
 print(head(genes[genes$gene == "A1BG", ], 4))
 ```
+
 
 > **Note**: the chromosome column must match what SeqArray stores in the GDS
 > (here `"19"`, without the `"chr"` prefix, even though the source BCF uses
@@ -230,6 +235,7 @@ model0 <- glmmkin(
 )
 cat("Done in", round((proc.time() - t0)["elapsed"], 1), "s\n")
 ```
+
 
 > For a **quantitative** trait use `family = gaussian(link = "identity")`.
 > For **case-control** data with many cases use `method.optim = "Brent"` in
@@ -278,6 +284,7 @@ for (mode in c("phased", "unphased")) {
   }
 }
 ```
+
 
 Each result is a data frame with one row per gene.  Key columns:
 
@@ -382,6 +389,7 @@ plot(-log10(results$p_cauchy[keep]), -log10(p_cauchy_un[keep]),
 abline(0, 1, lty = 2, col = "grey50")
 ```
 
+
 The phased and unphased Cauchy p-values are nearly identical for this cohort
 (points cluster along the diagonal).  The two methods differ only for variants
 where a mixed-ancestry carrier holds the alt allele on a single haplotype —
@@ -406,6 +414,7 @@ cat(sprintf("%-35s %d\n",  "Genes tested",                    nrow(results)))
 cat(sprintf("%-35s %d\n",  "Genes with both AFR+EUR p-values", sum(both)))
 cat(sprintf("%-35s %.3g\n","Min Cauchy p-value",              min(results$p_cauchy, na.rm=TRUE)))
 ```
+
 
 ---
 

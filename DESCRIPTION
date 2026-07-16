@@ -2,11 +2,19 @@ Package: lantern
 Type: Package
 Title: Ancestry-Specific Rare Variant Association Analysis
 Version: 0.1.1
-Authors@R:
+Authors@R: c(
     person(given = "Yu",
            family = "Wang",
            role = c("aut", "cre"),
-           email = "wangyu19940804@gmail.com")
+           email = "wangyu19940804@gmail.com"),
+    person(given = "Bjoernar",
+           family = "Tuftin",
+           role = "aut",
+           email = "btuftin@email.unc.edu"),
+    person(given = "Paul",
+           family = "Auer",
+           role = "aut",
+           email = "pauer@mcw.edu"))
 Description: Ancestry-specific rare variant burden testing for admixed
     populations. Uses a pure C backend to split genotype dosages by local
     ancestry inferred from phased or unphased data, then runs

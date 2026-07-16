@@ -87,7 +87,7 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
         // 
         // Singleton case: if N5 == sum(gt), p1 = p2 = 0.5
         
-        double total_alt = 2 * cnt.N1 + cnt.N2 + cnt.N4 + cnt.N5 + 2 * cnt.N7 + cnt.N8;
+        double total_alt = 2 * cnt.N1 + cnt.N2 + 2 * cnt.N4 + cnt.N5 + 2 * cnt.N7 + cnt.N8;
         double p1, p2;
         
         if (cnt.N5 > 0 && total_alt == (double)cnt.N5) {
@@ -104,9 +104,9 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
                 p1 = numerator_p1 / denominator;
                 p2 = numerator_p2 / denominator;
             } else {
-                // Edge case: no non-singleton data
-                p1 = 0.5;
-                p2 = 0.5;
+                // Edge case: no minor allele observed in the entire sample (all gt=0 or missing)
+                p1 = 0.0f;
+                p2 = 0.0f;
             }
         }
         
