@@ -144,6 +144,58 @@ Produced by parsing an RFMix `.msp` file, or supplied directly.
 - **Columns**: Samples (must match haplotype matrix columns)
 - **Values**: Population code, per `pop_codes` (RFMix default: `AFR = 0`, `EUR = 1`) — **not** the same 1/2/3 diploid codes used by the dosage split's PT matrix
 
+##### Where the MSP file comes from
+
+The `.msp.tsv[.gz]` file is one of several outputs written by
+[RFMix2](https://github.com/slowkoni/rfmix), a local-ancestry inference tool.
+A typical run that produces it looks like:
+
+```bash
+rfmix -f query.phased.vcf.gz \
+      -r reference_panel.phased.vcf.gz \
+      -m sample_map.tsv \
+      -g genetic_map.txt \
+      -o LANTERN_chr19 \
+      --chromosome=chr19
+```
+
+This writes several sibling files sharing the `LANTERN_chr19` prefix; LANTERN
+only reads the `.msp.tsv.gz`:
+
+| File | Content | Used by LANTERN? |
+|---|---|---|
+| `*.msp.tsv.gz` | Viterbi (most-likely) local-ancestry call per haplotype per tract | **Yes** — `.parse_msp()` / `ancestry_split_phased()` / `ancestry_split_combined()` |
+| `*.fb.tsv.gz` | Forward-backward posterior probability per population per haplotype per marker | No |
+| `*.rfmix.Q.gz` | Global (genome-wide) ancestry proportion per sample, ADMIXTURE-style `.Q` format | No |
+| `*.sis.tsv.gz` | Per-SNP interpolated ancestry probability | No |
+
+##### MSP file structure
+
+```
+#Subpopulation order/codes: AFR=0	EUR=1
+#chm	spos	epos	sgpos	egpos	n snps	SAMPLE1.0	SAMPLE1.1	SAMPLE2.0	SAMPLE2.1	...
+chr19	226776	518686	0.00	1.17	457	0	0	0	1	...
+chr19	518686	554919	1.17	1.35	85	0	0	0	1	...
+```
+
+- **Line 1** (`#`-prefixed comment): population name → code mapping, e.g.
+  `AFR=0  EUR=1`. Parsed into `pop_codes`.
+- **Line 2** (`#`-prefixed comment): column headers.
+- **Data rows**: one row per contiguous local-ancestry **tract** — a genomic
+  segment RFMix2 called as a single ancestry block, *not* one row per
+  variant:
+  - `chm` — chromosome
+  - `spos` / `epos` — tract start/end, physical position (bp)
+  - `sgpos` / `egpos` — tract start/end, genetic position (cM)
+  - `n snps` — number of markers RFMix2 used to call this tract
+  - remaining columns — one per **haplotype** (named `<sample_id>.0`,
+    `<sample_id>.1`), holding the ancestry code from line 1 for that
+    haplotype over that tract
+
+`.parse_msp()` broadcasts each tract's call out to every variant whose
+position falls within `[spos, epos]`, producing the `anc_hap0`/`anc_hap1`
+matrices at variant resolution.
+
 #### Haplotype genotype matrices (`gt_hap0` / `gt_hap1`)
 
 Produced by splitting a phased VCF's `0|1`-style genotype calls into one

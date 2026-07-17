@@ -24,45 +24,38 @@ articles:
   - title: "Workflows"
     navbar: "Workflows"
     contents:
-      - vcf-splitting
-      - multi-ancestry-splitting
-      - gene-level-test
-      - complete-workflow
+      - split-intuition
+      - toy-vcf-msp-example
+      - real-data-chr19
 
 reference:
-  - title: "Unphased splitting"
+  - title: "Step 1: split"
     desc: >
-      Functions for diploid genotype matrices where ancestry is summarised
-      as a per-variant diploid code.
+      Split a VCF (or raw genotype/ancestry matrices) by local ancestry.
+      ancestry_split() and the K-population split_*_multi() primitives work
+      for any number of populations, not just two.
     contents:
+      - ancestry_split
+      - ancestry_split_dosage
+      - ancestry_split_phased
       - split_diploid
       - split_diploid_multi
-      - ancestry_split_dosage
-      - count_ancestry_codes
-
-  - title: "Phased splitting"
-    desc: >
-      Functions for phased data where per-haplotype local ancestry is
-      available (e.g. from RFMix).  Splitting is deterministic.
-    contents:
       - split_haplotype
       - split_haplotype_multi
-      - ancestry_split_phased
-      - ancestry_split_combined
 
-  - title: "VCF utilities"
-    desc: Write and subset ancestry-specific VCF files.
+  - title: "Step 2: write GDS"
+    desc: Materialize a Step 1 split result to per-population GDS files.
     contents:
-      - write_vcf_with_ancestry
-      - create_ancestry_vcfs
-      - subset_vcf_by_range
-
-  - title: "Downstream helpers"
-    desc: Helpers for writing GDS files and combining ancestry-specific p-values.
-    contents:
+      - write_ancestry_gds
       - write_dosage_gds
+
+  - title: "Step 3: associate"
+    desc: >
+      Run GMMAT::SMMAT() across ancestry-split GDS files and Cauchy-combine
+      the per-gene p-values.
+    contents:
+      - ancestry_smmat
       - cauchy_combine
-      - calc_gene_ancestry_weights
 
   - title: "Package"
     contents:
