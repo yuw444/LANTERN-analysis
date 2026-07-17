@@ -8,11 +8,26 @@ vignette: >
 ---
 
 <!--
-GENERATED FILE -- do not hand-edit. This is the pre-rendered output of
-real-data-chr19.Rmd.orig (knitted locally against the gitignored raw/ JHS
-data). Edit the .orig file and re-knit; see the comment at the top of it
-for the exact command.
+This is the SOURCE for vignettes/real-data-chr19.Rmd. It requires the
+gitignored raw/ JHS cohort data (see CLAUDE.md) and is never built by
+R CMD check / pkgdown directly -- CI only ever sees the pre-rendered
+vignettes/real-data-chr19.Rmd. After editing this file, re-knit it locally
+(where raw/ exists) from the repo root:
+
+  pixi run Rscript -e '
+    setwd("lantern/vignettes")
+    knitr::knit("real-data-chr19.Rmd.orig", output = "real-data-chr19.Rmd")
+  '
+
+then commit both files together.
 -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(lantern)
+library(GMMAT)
+RAW <- "../../raw"
+```
 
 
 ## Overview
@@ -34,8 +49,7 @@ continuous, or count phenotype.
   this JHS cohort only has AFR/EUR calls, so Steps 1–2 below are shown for
   two populations, but nothing changes for K > 2 beyond the MSP header.
 
-
-``` r
+```{r real-step1-2}
 # Step 1: split. Step 2: write one GDS per population.
 split_real <- ancestry_split(
   vcf_path = file.path(RAW, "LANTERN.phased.bcf"),
@@ -44,44 +58,10 @@ split_real <- ancestry_split(
   chrom    = "chr19",
   verbose  = TRUE
 )
-#> === LANTERN Ancestry Split (Step 1, mode = dosage) ===
-#> Step 1: Parsing RFMix MSP file...
-#>   Parsing MSP file: ../../raw/LANTERN_chr19.msp.tsv.gz
-#>     Found 3416 samples, 2 populations
-#>     Pop codes: AFR = 0, EUR = 1
-#>   MSP samples: 3416  Tracts: 653
-#> 
-#> Step 2: Querying VCF sample IDs...
-#>   VCF samples: 3314
-#> 
-#> Step 3: Intersecting samples...
-#>   Common: 3313
-#> 
-#> Step 4: Parsing VCF genotypes...
-#>   44275 variant lines read
-#> 
-#> Step 5: Mapping variants to ancestry tracts...
-#>   Filtered to chrom chr19: 44275 variants
-#>   Variants with no tract: 2 (dropped)
-#> 
-#> Step 6: Broadcasting ancestry to variants...
-#> 
-#> Step 7: Splitting genotypes by ancestry (dosage)...
-#> 
-#> Step 8: Filtering monomorphic variants...
-#>   Removed 2 monomorphic variants
-#> 
-#> === Step 1 Complete: 44271 variants, 3313 samples, 2 populations ===
 gds_paths <- write_ancestry_gds(split_real, tempfile(), verbose = TRUE)
-#> === LANTERN Write Ancestry GDS (Step 2) ===
-#> Writing GDS for AFR (1/2)...
-#> Writing GDS for EUR (2/2)...
-#> 
-#> === Step 2 Complete: 2 GDS file(s) written to /tmp/Rtmpilr8Cz/file1f9d1426a40752 ===
 
 ids <- split_real$sample_ids
 cat("Samples:", length(ids), "\n")
-#> Samples: 3313
 ```
 
 
@@ -92,8 +72,7 @@ fast we use a 5-gene subset here (the pattern is identical for the full
 file — just point `gene_group_file` at it and expect several minutes per
 `SMMAT()` call instead of seconds).
 
-
-``` r
+```{r real-genes}
 genes_full  <- read.table(file.path(RAW, "genes_chr19_smmat.tsv"), header = FALSE,
                            sep = "\t",
                            col.names = c("gene", "chrom", "pos", "ref", "alt", "weight"))
@@ -102,7 +81,6 @@ genes_small <- genes_full[genes_full$gene %in% unique(genes_full$gene)[1:5], ]
 kinship <- readRDS(file.path(RAW, "LANTERN_kinship_rds.rds"))
 common_ids <- intersect(ids, rownames(kinship))
 cat("Genes:", length(unique(genes_small$gene)), "  Common samples:", length(common_ids), "\n")
-#> Genes: 5   Common samples: 3313
 ```
 
 `genes_small` is passed straight to `ancestry_smmat()`'s `gene_group_file`
@@ -114,8 +92,7 @@ too, if that's more convenient for your own pipeline.
 
 ## 2  Binary phenotype (`family = binomial()`)
 
-
-``` r
+```{r real-binary}
 set.seed(1)
 pheno_binary <- data.frame(id = common_ids, y = rbinom(length(common_ids), 1, 0.3))
 
@@ -123,12 +100,6 @@ res_binary <- ancestry_smmat(gds_paths, pheno_binary, y ~ 1, kinship, genes_smal
                               family    = binomial(link = "logit"),
                               MAF.range = c(0, 0.05), verbose = FALSE)
 print(res_binary$results)
-#>      gene     p_AFR     p_EUR  p_cauchy
-#> 1    A1BG 0.1492616 0.7938859 0.3997315
-#> 2   ABCA7 0.2031324 0.1900808 0.1964182
-#> 3 ABHD17A 0.8941616 0.2588411 0.7459638
-#> 4   ABHD8 0.5078140 0.3048892 0.3958519
-#> 5   ACER1 0.2196545 0.3375616 0.2692847
 ```
 
 
@@ -136,39 +107,25 @@ print(res_binary$results)
 
 Only the `family` and the simulated `y` change:
 
-
-``` r
+```{r real-continuous}
 pheno_cont <- data.frame(id = common_ids, y = rnorm(length(common_ids)))
 
 res_cont <- ancestry_smmat(gds_paths, pheno_cont, y ~ 1, kinship, genes_small,
                             family    = gaussian(link = "identity"),
                             MAF.range = c(0, 0.05), verbose = FALSE)
 print(res_cont$results)
-#>      gene      p_AFR     p_EUR  p_cauchy
-#> 1    A1BG 0.32271246 0.5564923 0.4305589
-#> 2   ABCA7 0.71670271 0.3862533 0.5684131
-#> 3 ABHD17A 0.31455720 0.6888582 0.5024665
-#> 4   ABHD8 0.56071838 0.8476944 0.7593479
-#> 5   ACER1 0.09634068 0.7767378 0.2485254
 ```
 
 
 ## 4  Count phenotype (`family = poisson()`)
 
-
-``` r
+```{r real-count}
 pheno_count <- data.frame(id = common_ids, y = rpois(length(common_ids), lambda = 3))
 
 res_count <- ancestry_smmat(gds_paths, pheno_count, y ~ 1, kinship, genes_small,
                              family    = poisson(link = "log"),
                              MAF.range = c(0, 0.05), verbose = FALSE)
 print(res_count$results)
-#>      gene      p_AFR      p_EUR  p_cauchy
-#> 1    A1BG 0.89654667 0.02082793 0.0513362
-#> 2   ABCA7 0.45190129 0.66226067 0.5638687
-#> 3 ABHD17A 0.29662855 0.75212153 0.5428024
-#> 4   ABHD8 0.11031509 0.65554127 0.2321887
-#> 5   ACER1 0.04307048 0.81238745 0.1048616
 ```
 
 ## 5  Adjusting for covariates
@@ -178,8 +135,7 @@ in `formula`, as long as the matching columns exist in `pheno` — nothing
 else about the call changes. Here we add a simulated `age` and `sex` to
 the continuous-phenotype example from Section 3:
 
-
-``` r
+```{r real-covariates}
 set.seed(2)
 age <- round(rnorm(length(common_ids), mean = 55, sd = 12))
 sex <- factor(sample(c("F", "M"), length(common_ids), replace = TRUE))
@@ -190,12 +146,6 @@ res_cov <- ancestry_smmat(gds_paths, pheno_cov, y ~ age + sex, kinship, genes_sm
                            family    = gaussian(link = "identity"),
                            MAF.range = c(0, 0.05), verbose = FALSE)
 print(res_cov$results)
-#>      gene      p_AFR      p_EUR   p_cauchy
-#> 1    A1BG 0.78973635 0.63646754 0.72827528
-#> 2   ABCA7 0.61704448 0.70291389 0.66320132
-#> 3 ABHD17A 0.05755877 0.08958273 0.07014252
-#> 4   ABHD8 0.61776792 0.42714304 0.52459912
-#> 5   ACER1 0.10424888 0.90977046 0.57638538
 ```
 
 Genotype PCs from your own PCA (e.g. `PC1`, ..., `PC10`) work the same
