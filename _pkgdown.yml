@@ -42,6 +42,7 @@ reference:
       - split_diploid_multi
       - split_haplotype
       - split_haplotype_multi
+      - read_bed_file
 
   - title: "Step 2: write GDS"
     desc: Materialize a Step 1 split result to per-population GDS files.
