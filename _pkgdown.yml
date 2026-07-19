@@ -24,7 +24,6 @@ articles:
   - title: "Workflows"
     navbar: "Workflows"
     contents:
-      - generating-local-ancestry
       - split-intuition
       - toy-vcf-msp-example
       - real-data-chr19

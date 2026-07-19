@@ -265,6 +265,52 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 }
 
 # ============================================================================
+# PLINK BED reader (Step 1 input helper for BED-encoded local ancestry)
+# ============================================================================
+
+#' Read a PLINK .bed file of BED-encoded local ancestry calls
+#'
+#' Reads a PLINK binary genotype file (\code{.bed}/\code{.bim}/\code{.fam}
+#' trio) into an integer matrix, for the case where local ancestry has been
+#' encoded as PLINK genotype calls at ancestry-tract "SNPs" (as consumed by
+#' \code{src/step1_vcf_split_by_ancestry.R}): homozygous first allele = pure
+#' EUR/EUR (code 1), heterozygous = mixed AFR/EUR (code 2), homozygous
+#' second allele = pure AFR/AFR (code 3), missing = no call (code 0). This
+#' matches \code{snpStats::read.plink()}'s raw numeric convention (values
+#' feed directly into \code{\link{split_diploid}}/\code{\link{ancestry_split_dosage}}
+#' as \code{pt_matrix}/\code{ancestry} without \code{snpStats} as a
+#' dependency.
+#'
+#' @param bed Path to the \code{.bed} file.
+#' @param bim Path to the \code{.bim} file (variant IDs are taken from
+#'   column 2).
+#' @param fam Path to the \code{.fam} file (sample IDs are taken from
+#'   column 2, i.e. IID).
+#'
+#' @return Integer matrix (variants x samples), dimnamed from the
+#'   \code{.bim}/\code{.fam} files. Values: 0 = no call, 1 = homozygous
+#'   first allele, 2 = heterozygous, 3 = homozygous second allele.
+#'
+#' @seealso \code{\link{split_diploid}}, \code{\link{ancestry_split_dosage}}
+#'
+#' @examples
+#' \dontrun{
+#' pt <- read_bed_file("ancestry.bed", "ancestry.bim", "ancestry.fam")
+#' }
+#'
+#' @export
+read_bed_file <- function(bed, bim, fam) {
+  bim_dt <- data.table::fread(bim, header = FALSE)
+  fam_dt <- data.table::fread(fam, header = FALSE)
+  variant_ids <- as.character(bim_dt[[2]])
+  sample_ids  <- as.character(fam_dt[[2]])
+
+  mat <- .Call("read_bed_file_C", bed, bim, fam, integer(0), PACKAGE = "lantern")
+  dimnames(mat) <- list(variant_ids, sample_ids)
+  mat
+}
+
+# ============================================================================
 # MSP / VCF parsing helpers
 # ============================================================================
 
@@ -405,6 +451,31 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 # Shared VCF + MSP parsing (steps 1-6, used by ancestry_split() below)
 # ============================================================================
 
+#' Resolve a chromosome name against a VCF/BCF's declared contigs
+#'
+#' Tries \code{chrom} as given, with a leading "chr" stripped, and with a
+#' leading "chr" added, against the \code{##contig=<ID=...>} lines in the
+#' file's header. Used to restrict \code{bcftools query} to one chromosome
+#' via \code{-t} without guessing the file's naming convention. Returns
+#' \code{NULL} (triggering an unrestricted query, filtered in R instead) if
+#' the header has no contig lines or none of the candidates match.
+#'
+#' @keywords internal
+.resolve_vcf_contig <- function(vcf_path, chrom) {
+  header <- tryCatch(
+    system(paste0("bcftools view -h ", shQuote(vcf_path)),
+           intern = TRUE, ignore.stderr = TRUE),
+    error = function(e) character(0))
+  contig_ids <- sub("^##contig=<ID=([^,>]+).*$", "\\1",
+                     grep("^##contig=<ID=", header, value = TRUE))
+  if (length(contig_ids) == 0) return(NULL)
+  chrom_clean <- sub("^chr", "", chrom)
+  candidates  <- c(chrom, chrom_clean, paste0("chr", chrom_clean))
+  match_id    <- candidates[candidates %in% contig_ids]
+  if (length(match_id) == 0) return(NULL)
+  match_id[1]
+}
+
 #' Parse an MSP file and a phased VCF into haplotype/ancestry matrices
 #'
 #' Internal helper shared by \code{\link{ancestry_split}}: parses the RFMix
@@ -423,9 +494,26 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
   anc_hap0_mat <- msp_data$anc_hap0
   anc_hap1_mat <- msp_data$anc_hap1
   pop_codes    <- msp_data$pop_codes
-  n_tracts     <- nrow(tract_df)
+
+  # Restrict tracts to the requested chromosome up front. Besides avoiding
+  # wasted work on other chromosomes' tracts, this fixes a correctness gap:
+  # without it, a multi-chromosome MSP file's tract_df is sorted by spos
+  # alone (chromosome-agnostic), so findInterval() below could match a
+  # variant to the wrong chromosome's tract purely by position overlap.
+  if (!is.null(chrom)) {
+    chrom_clean <- sub("^chr", "", chrom)
+    tract_keep  <- sub("^chr", "", tract_df$chrom) == chrom_clean
+    if (!any(tract_keep))
+      stop("No ancestry tracts on chromosome ", chrom, " in MSP file")
+    tract_df     <- tract_df[tract_keep, , drop = FALSE]
+    anc_hap0_mat <- anc_hap0_mat[, tract_keep, drop = FALSE]
+    anc_hap1_mat <- anc_hap1_mat[, tract_keep, drop = FALSE]
+    rownames(tract_df) <- NULL
+  }
+  n_tracts <- nrow(tract_df)
   if (verbose) message("  MSP samples: ", length(msp_samples),
-                       "  Tracts: ", n_tracts)
+                       "  Tracts: ", n_tracts,
+                       if (!is.null(chrom)) paste0(" (chr ", chrom, " only)") else "")
 
   # ---- Step 2: VCF sample IDs ----
   if (verbose) message("\nStep 2: Querying VCF sample IDs...")
@@ -451,8 +539,22 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 
   # ---- Step 4: Parse VCF GT ----
   if (verbose) message("\nStep 4: Parsing VCF genotypes...")
+  target_arg <- ""
+  if (!is.null(chrom)) {
+    resolved <- .resolve_vcf_contig(vcf_path, chrom)
+    if (!is.null(resolved)) {
+      target_arg <- paste0("-t ", shQuote(resolved), " ")
+      if (verbose) message("  Restricting bcftools query to contig '", resolved,
+                           "' (other chromosomes are never read into R)")
+    } else if (verbose) {
+      message("  Could not match chromosome '", chrom, "' against the VCF's ",
+              "##contig header; querying all variants and filtering ",
+              "afterward instead (slower, more memory)")
+    }
+  }
   cmd_gt <- paste0(
-    "bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\n' ",
+    "bcftools query ", target_arg,
+    "-f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\n' ",
     shQuote(vcf_path))
   gt_output <- tryCatch(
     system(cmd_gt, intern = TRUE, ignore.stderr = TRUE),
@@ -517,14 +619,13 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
   if (any(valid_tract))
     valid_tract[valid_tract] <-
       vcf_pos[valid_tract] <= tract_df$epos[tract_idx[valid_tract]]
-  valid_chrom <- if (!is.null(chrom)) {
-    rep(TRUE, length(tract_idx))
-  } else {
-    vapply(seq_along(tract_idx), function(i) {
-      tract_idx[i] > 0 &&
-        vcf_chrom_clean[i] == tract_chrom_clean[tract_idx[i]]
-    }, logical(1))
-  }
+  # tract_df is already restricted to `chrom` (Step 1) whenever chrom is
+  # supplied, so this check is cheap and always correct either way -- no
+  # special-cased shortcut needed.
+  valid_chrom <- vapply(seq_along(tract_idx), function(i) {
+    tract_idx[i] > 0 &&
+      vcf_chrom_clean[i] == tract_chrom_clean[tract_idx[i]]
+  }, logical(1))
   keep_var <- valid_tract & valid_chrom
   n_no_tract <- sum(!keep_var)
   if (n_no_tract > 0 && verbose)
@@ -600,7 +701,15 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #'   \code{\link{split_haplotype_multi}}, phased). Either/or — call
 #'   \code{ancestry_split()} twice if both are needed.
 #' @param chrom Chromosome to process (e.g., \code{"chr19"} or \code{"19"}).
-#'   If \code{NULL}, all chromosomes present in the VCF are used.
+#'   If \code{NULL}, all chromosomes present in the VCF are used. When
+#'   supplied, \code{vcf_path} and \code{msp_path} may contain other
+#'   chromosomes too: MSP tracts outside \code{chrom} are dropped up front,
+#'   and \code{bcftools query} is restricted to \code{chrom} via \code{-t}
+#'   when the VCF's declared or inferred contigs allow resolving the exact
+#'   name to use (whichever of \code{chrom}, with, or without a leading
+#'   "chr" matches) -- other chromosomes' genotypes are never read into R.
+#'   If the contig can't be resolved, all variants are queried and filtered
+#'   in R instead (slower, more memory, same result).
 #' @param verbose Print step-by-step progress messages.
 #'
 #' @return Invisibly, a list with one named numeric matrix (variants x

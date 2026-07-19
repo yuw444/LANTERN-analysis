@@ -780,3 +780,78 @@ test_that("ancestry_split_phased handles variants outside tracts", {
   expect_equal(nrow(result$african), 1)
   expect_equal(result$variant_info$pos, 500)
 })
+
+# ============================================================================
+# read_bed_file: PLINK .bed reader for BED-encoded local ancestry
+# ============================================================================
+
+test_that("read_bed_file matches snpStats::read.plink()'s raw numeric convention", {
+  td <- tempdir()
+
+  # 1 variant, 4 samples. True PLINK 2-bit codes (low bits = first sample
+  # in the byte): 00 = hom. first allele, 01 = missing, 10 = het,
+  # 11 = hom. second allele.
+  #   S0 = 00, S1 = 01, S2 = 10, S3 = 11
+  byte_val <- 0L + bitwShiftL(1L, 2) + bitwShiftL(2L, 4) + bitwShiftL(3L, 6)
+
+  bed <- file.path(td, "rbf_test.bed")
+  bim <- file.path(td, "rbf_test.bim")
+  fam <- file.path(td, "rbf_test.fam")
+
+  con <- file(bed, "wb")
+  writeBin(as.raw(c(0x6c, 0x1b, 0x01)), con)
+  writeBin(as.raw(byte_val), con)
+  close(con)
+
+  writeLines("22\trs1\t0\t1000\tA\tG", bim)
+  writeLines(c("FAM\tS0\t0\t0\t0\t-9", "FAM\tS1\t0\t0\t0\t-9",
+               "FAM\tS2\t0\t0\t0\t-9", "FAM\tS3\t0\t0\t0\t-9"), fam)
+
+  mat <- read_bed_file(bed, bim, fam)
+
+  expect_equal(dim(mat), c(1L, 4L))
+  expect_equal(rownames(mat), "rs1")
+  expect_equal(colnames(mat), c("S0", "S1", "S2", "S3"))
+  # snpStats convention: 0 = missing, 1 = hom. first allele, 2 = het,
+  # 3 = hom. second allele -- i.e. NOT the raw on-disk bit order (0,1,2,3).
+  expect_equal(as.integer(mat["rs1", ]), c(1L, 0L, 2L, 3L))
+})
+
+# ============================================================================
+# ancestry_split: chrom filtering with a multi-chromosome MSP/VCF
+# ============================================================================
+
+test_that("ancestry_split(chrom=) does not confuse tracts across chromosomes with overlapping positions", {
+  td <- tempdir()
+
+  # chr1 tract 100-200: S0 = pure EUR. chr2 tract 100-200 (same range!):
+  # S0 = pure AFR. Without per-chromosome tract filtering, findInterval()
+  # on a chromosome-agnostic tract_df could match a chr1 variant to chr2's
+  # tract purely by position overlap.
+  msp <- tempfile(fileext = ".tsv", tmpdir = td)
+  writeLines(c(
+    "#Subpopulation order/codes:\tAFR=0\tEUR=1",
+    "#chm\tspos\tepos\tsgpos\tegpos\tn snps\tS0.0\tS0.1",
+    "chr1\t100\t200\t0.0\t0.1\t5\t1\t1",
+    "chr2\t100\t200\t0.0\t0.1\t5\t0\t0"
+  ), msp)
+
+  vcf <- tempfile(fileext = ".vcf", tmpdir = td)
+  writeLines(c(
+    "##fileformat=VCFv4.2",
+    "##contig=<ID=chr1,length=248956422>",
+    "##contig=<ID=chr2,length=242193529>",
+    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS0",
+    "chr1\t150\t.\tA\tT\t.\tPASS\t.\tGT\t0|1",
+    "chr2\t150\t.\tC\tG\t.\tPASS\t.\tGT\t0|1"
+  ), vcf)
+
+  result <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr1", verbose = FALSE)
+
+  expect_equal(nrow(result$variant_info), 1)
+  expect_equal(result$variant_info$pos, 150)
+  # S0 is pure EUR on chr1's tract -- must NOT pick up chr2's pure-AFR tract.
+  expect_equal(result$EUR[1, 1], 1)
+  expect_equal(result$AFR[1, 1], 0)
+})

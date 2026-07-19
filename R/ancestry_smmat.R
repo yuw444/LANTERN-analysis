@@ -4,8 +4,10 @@
 
 #' Per-gene ancestry weights for the Cauchy combination (Step 3 helper)
 #'
-#' Generalises \code{src/step3_weight_finding.R}'s median per-gene ancestry
-#' count logic to K populations: for each gene in \code{gene_group_file},
+#' Generalises the retired \code{src/step3_weight_finding.R} script's
+#' median per-gene ancestry count logic to K populations (that
+#' functionality now lives here, fed by \code{ancestry_counts}/
+#' \code{variant_info} from Step 1): for each gene in \code{gene_group_file},
 #' takes the median (across the gene's variants) of the per-variant pure-
 #' ancestry sample counts in \code{ancestry_counts}.
 #'
@@ -62,8 +64,8 @@
 #'
 #' Wraps \code{GMMAT::SMMAT()} across all ancestry-split GDS files (as
 #' produced by \code{\link{write_ancestry_gds}}), computes per-gene
-#' ancestry weights from Step 1's \code{ancestry_counts} (generalizing
-#' \code{src/step3_weight_finding.R}), and combines the per-gene p-values
+#' ancestry weights from Step 1's \code{ancestry_counts} (this replaces the
+#' retired \code{src/step3_weight_finding.R} script), and combines the per-gene p-values
 #' across populations with \code{\link{cauchy_combine}}. This is the
 #' package's Step 3 entry point; it does not run Step 1/2 for you (SMMAT
 #' runs can take hours, so this is always an explicit, separate call).

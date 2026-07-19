@@ -195,39 +195,48 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sa
     fclose(fp);
     
     int store_size = (n_samples + 3) / 4;
-    
+
+    // Rows = variants, columns = samples (matches split_by_ancestry_C's
+    // expected orientation and count_ancestry_codes_C's "rows = regions"
+    // convention elsewhere in this file).
     SEXP result = PROTECT(allocVector(INTSXP, n_samples * n_variants));
     int *gt = INTEGER(result);
     memset(gt, 0, n_samples * n_variants * sizeof(int));
-    
+
     fp = fopen(bed, "rb");
     fseek(fp, 3, SEEK_SET);
-    
+
+    // PLINK .bed 2-bit codes (low bits = first sample in the byte):
+    //   00 = homozygous first allele, 01 = missing,
+    //   10 = heterozygous,            11 = homozygous second allele.
+    // Remapped here to match snpStats::read.plink()'s raw numeric scheme
+    // (0 = missing, 1 = hom. first allele, 2 = het, 3 = hom. second allele)
+    // -- the convention this project's ancestry-encoded .bed files (pt
+    // code 1=EUR/EUR, 2=AFR/EUR, 3=AFR/AFR, 0=no call) were built against.
+    static const int code_map[4] = {1, 0, 2, 3};
+
     for (int v = 0; v < n_variants; v++) {
         unsigned char buffer[store_size];
         if (fread(buffer, 1, store_size, fp) != (size_t)store_size) {
             fclose(fp);
             error("Truncated bed file at variant %d", v);
         }
-        
+
         for (int s = 0; s < n_samples; s++) {
             int byte_idx = s / 4;
             int bit_idx = (s % 4) * 2;
-            int genotype = (buffer[byte_idx] >> bit_idx) & 0x03;
-            
-            if (genotype == 3) gt[s + n_samples * v] = 3;  // Missing
-            else if (genotype == 2) gt[s + n_samples * v] = 2;  // Homozygous alt
-            else if (genotype == 1) gt[s + n_samples * v] = 1;  // Heterozygous
-            else gt[s + n_samples * v] = 0;  // Homozygous ref
+            int raw = (buffer[byte_idx] >> bit_idx) & 0x03;
+
+            gt[v + n_variants * s] = code_map[raw];
         }
     }
     fclose(fp);
-    
+
     SEXP dim = PROTECT(allocVector(INTSXP, 2));
-    INTEGER(dim)[0] = n_samples;
-    INTEGER(dim)[1] = n_variants;
+    INTEGER(dim)[0] = n_variants;
+    INTEGER(dim)[1] = n_samples;
     setAttrib(result, R_DimSymbol, dim);
-    
+
     UNPROTECT(2);
     return result;
 }

@@ -8,11 +8,21 @@ vignette: >
 ---
 
 <!--
-GENERATED FILE -- do not hand-edit. This is the pre-rendered output of
-real-data-chr19.Rmd.orig (knitted locally against the gitignored raw/ JHS
-data). Edit the .orig file and re-knit; see the comment at the top of it
-for the exact command.
+This is the SOURCE for vignettes/real-data-chr19.Rmd. It requires the
+gitignored raw/ JHS cohort data (see CLAUDE.md) and is never built by
+R CMD check / pkgdown directly -- CI only ever sees the pre-rendered
+vignettes/real-data-chr19.Rmd. After editing this file, re-knit it locally
+(where raw/ exists) from the repo root:
+
+  pixi run Rscript -e '
+    setwd("lantern/vignettes")
+    knitr::knit("real-data-chr19.Rmd.orig", output = "real-data-chr19.Rmd")
+  '
+
+then commit both files together.
 -->
+
+
 
 
 ## Overview
@@ -77,7 +87,7 @@ gds_paths <- write_ancestry_gds(split_real, tempfile(), verbose = TRUE)
 #> Writing GDS for AFR (1/2)...
 #> Writing GDS for EUR (2/2)...
 #> 
-#> === Step 2 Complete: 2 GDS file(s) written to /tmp/Rtmpilr8Cz/file1f9d1426a40752 ===
+#> === Step 2 Complete: 2 GDS file(s) written to /tmp/Rtmp7oMjf3/file699222c4d9016 ===
 
 ids <- split_real$sample_ids
 cat("Samples:", length(ids), "\n")

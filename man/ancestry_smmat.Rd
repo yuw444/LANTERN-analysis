@@ -102,8 +102,8 @@ A list with two elements:
 \description{
 Wraps \code{GMMAT::SMMAT()} across all ancestry-split GDS files (as
 produced by \code{\link{write_ancestry_gds}}), computes per-gene
-ancestry weights from Step 1's \code{ancestry_counts} (generalizing
-\code{src/step3_weight_finding.R}), and combines the per-gene p-values
+ancestry weights from Step 1's \code{ancestry_counts} (this replaces the
+retired \code{src/step3_weight_finding.R} script), and combines the per-gene p-values
 across populations with \code{\link{cauchy_combine}}. This is the
 package's Step 3 entry point; it does not run Step 1/2 for you (SMMAT
 runs can take hours, so this is always an explicit, separate call).

@@ -25,7 +25,15 @@ via \code{\link{split_diploid_multi}}, unphased) or \code{"haplotype"}
 \code{ancestry_split()} twice if both are needed.}
 
 \item{chrom}{Chromosome to process (e.g., \code{"chr19"} or \code{"19"}).
-If \code{NULL}, all chromosomes present in the VCF are used.}
+If \code{NULL}, all chromosomes present in the VCF are used. When
+supplied, \code{vcf_path} and \code{msp_path} may contain other
+chromosomes too: MSP tracts outside \code{chrom} are dropped up front,
+and \code{bcftools query} is restricted to \code{chrom} via \code{-t}
+when the VCF's declared or inferred contigs allow resolving the exact
+name to use (whichever of \code{chrom}, with, or without a leading
+"chr" matches) -- other chromosomes' genotypes are never read into R.
+If the contig can't be resolved, all variants are queried and filtered
+in R instead (slower, more memory, same result).}
 
 \item{verbose}{Print step-by-step progress messages.}
 }

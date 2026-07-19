@@ -30,8 +30,10 @@ Numeric matrix (genes x \code{pop_names}), or \code{NULL} if
   none of \code{pop_names} match \code{colnames(ancestry_counts)}.
 }
 \description{
-Generalises \code{src/step3_weight_finding.R}'s median per-gene ancestry
-count logic to K populations: for each gene in \code{gene_group_file},
+Generalises the retired \code{src/step3_weight_finding.R} script's
+median per-gene ancestry count logic to K populations (that
+functionality now lives here, fed by \code{ancestry_counts}/
+\code{variant_info} from Step 1): for each gene in \code{gene_group_file},
 takes the median (across the gene's variants) of the per-variant pure-
 ancestry sample counts in \code{ancestry_counts}.
 }
