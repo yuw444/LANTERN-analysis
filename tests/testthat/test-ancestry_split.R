@@ -132,6 +132,38 @@ test_that("split_diploid homozygous alt pure ancestries", {
   expect_equal(result$european[1, 2], 2.0)  # Homozygous alt with European
 })
 
+test_that("split_diploid_multi non-singleton p[k] calculation across K=3 populations", {
+  # One variant, 8 samples, exercising: pure het/hom-alt for each of 3 pops,
+  # a mixed hom-alt (unambiguous, contributes to both parent pools), and one
+  # ambiguous mixed het per pair (AFR/EUR, AFR/NAT, EUR/NAT) -- gt stays in
+  # {0,1,2} and ancestry codes are the auto-generated 1..K (pure) / K+1..K+M
+  # (mixed) convention ancestry_split() itself builds, matching what the
+  # rest of the package assumes.
+  #
+  # S1: pure AFR het        S2: pure AFR hom-alt     S3: pure EUR het
+  # S4: pure NAT het        S5: mixed AFR/EUR hom-alt (unambiguous)
+  # S6: mixed AFR/EUR het (ambiguous)   S7: mixed AFR/NAT het (ambiguous)
+  # S8: mixed EUR/NAT het (ambiguous)
+  gt  <- matrix(c(1, 2, 1, 1, 2, 1, 1, 1), nrow = 1, ncol = 8)
+  anc <- matrix(c(1, 1, 2, 3, 4, 4, 5, 6), nrow = 1, ncol = 8)
+  pure  <- c(AFR = 1L, EUR = 2L, NAT = 3L)
+  mixed <- data.frame(code = c(4L, 5L, 6L),
+                      pop1 = c("AFR", "AFR", "EUR"),
+                      pop2 = c("EUR", "NAT", "NAT"))
+
+  result <- split_diploid_multi(gt, anc, pure, mixed)
+
+  # num[AFR]=1+2+1=4, num[EUR]=1+1=2, num[NAT]=1, D=1+2+1+1+2=7
+  # pk[AFR]=4/7, pk[EUR]=2/7, pk[NAT]=1/7
+  expect_equal(result$AFR[1, ], c(1, 2, 0, 0, 1, (4/7)/(6/7), (4/7)/(5/7), 0), tolerance = 1e-9)
+  expect_equal(result$EUR[1, ], c(0, 0, 1, 0, 1, (2/7)/(6/7), 0, (2/7)/(3/7)), tolerance = 1e-9)
+  expect_equal(result$NAT[1, ], c(0, 0, 0, 1, 0, 0, (1/7)/(5/7), (1/7)/(3/7)), tolerance = 1e-9)
+  # every mixed-het sample's dosage should still sum to 1 across pools
+  for (s in c(6, 7, 8)) {
+    expect_equal(result$AFR[1, s] + result$EUR[1, s] + result$NAT[1, s], 1, tolerance = 1e-9)
+  }
+})
+
 # ============================================================================
 # split_haplotype / split_haplotype_multi
 # ============================================================================
@@ -195,6 +227,40 @@ test_that("split_haplotype supports custom pop codes and default pop codes", {
   expect_equal(custom$european, matrix(1, 1, 1))
   expect_equal(default$african, matrix(1, 1, 1))
   expect_equal(default$european, matrix(1, 1, 1))
+})
+
+test_that("split_haplotype_multi deterministically splits phased haplotypes across K=3 populations", {
+  # One variant, 6 samples: pure AFR/AFR het, pure EUR/EUR hom-alt, pure
+  # NAT/NAT het, mixed AFR/EUR (only EUR haplotype alt), mixed AFR/NAT
+  # (both haplotypes alt), mixed EUR/NAT (only EUR haplotype alt). Each
+  # haplotype's gt (0/1) is routed to whichever of the 3 pools its own
+  # ancestry call matches -- deterministic, no p[k] estimation involved.
+  gt_hap0  <- matrix(c(1, 1, 0, 0, 1, 1), nrow = 1)
+  gt_hap1  <- matrix(c(0, 1, 1, 1, 1, 0), nrow = 1)
+  anc_hap0 <- matrix(c(0L, 1L, 2L, 0L, 0L, 1L), nrow = 1)  # AFR,EUR,NAT,AFR,AFR,EUR
+  anc_hap1 <- matrix(c(0L, 1L, 2L, 1L, 2L, 2L), nrow = 1)  # AFR,EUR,NAT,EUR,NAT,NAT
+  pop_codes <- c(AFR = 0L, EUR = 1L, NAT = 2L)
+
+  result <- split_haplotype_multi(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)
+
+  expect_named(result, c("AFR", "EUR", "NAT"))
+  expect_equal(result$AFR[1, ], c(1, 0, 0, 0, 1, 0))
+  expect_equal(result$EUR[1, ], c(0, 2, 0, 1, 0, 1))
+  expect_equal(result$NAT[1, ], c(0, 0, 1, 0, 1, 0))
+})
+
+test_that("split_haplotype_multi treats NA gt and invalid ancestry as zero, K=3", {
+  gt_hap0  <- matrix(c(NA, 1), nrow = 1)
+  gt_hap1  <- matrix(c(1, 0), nrow = 1)
+  anc_hap0 <- matrix(c(0L, 9L), nrow = 1)   # sample2's hap0 ancestry (9) is invalid
+  anc_hap1 <- matrix(c(1L, 1L), nrow = 1)
+  pop_codes <- c(AFR = 0L, EUR = 1L, NAT = 2L)
+
+  result <- split_haplotype_multi(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)
+
+  expect_equal(result$AFR[1, ], c(0, 0))  # NA gt -> 0; invalid code -> contributes nothing
+  expect_equal(result$EUR[1, ], c(1, 0))
+  expect_equal(result$NAT[1, ], c(0, 0))
 })
 
 # ============================================================================
@@ -278,10 +344,13 @@ test_that("ancestry_split mode = 'dosage' splits mixed hets proportionally", {
                             verbose = FALSE)
 
   expect_equal(result$mode, "dosage")
-  # Singleton mixed het: proportional split defaults to 0.5 / 0.5
+  # Singleton mixed het: with no unambiguous evidence at all, w = 1, so the
+  # split falls back entirely to this variant's arm-level GLA rather than a
+  # flat 0.5/0.5. Here the only tract has 1 mixed (S1) + 1 pure-EUR (S2)
+  # diploid call: GLA_AFR = (2*0+1)/(2*(0+1+1)) = 0.25, GLA_EUR = 0.75.
   expect_equal(result$AFR[1, 1] + result$EUR[1, 1], 1, tolerance = 1e-6)
-  expect_equal(result$AFR[1, 1], 0.5, tolerance = 1e-6)
-  expect_equal(result$EUR[1, 1], 0.5, tolerance = 1e-6)
+  expect_equal(result$AFR[1, 1], 0.25, tolerance = 1e-6)
+  expect_equal(result$EUR[1, 1], 0.75, tolerance = 1e-6)
 })
 
 test_that("ancestry_split returns ancestry_counts aligned with variant_info", {
@@ -352,6 +421,142 @@ test_that("ancestry_split supports K = 3 populations", {
   expect_equal(result$AFR[1, 1], 1, tolerance = 1e-9)  # S1 hap1 is AFR w/ alt
   expect_equal(result$EUR[1, 2], 2, tolerance = 1e-9)  # S2 pure EUR hom alt
   expect_equal(result$NAT[1, 3], 0, tolerance = 1e-9)  # S3 pure NAT, no alt
+})
+
+test_that("ancestry_split K=3 dosage mode: GLA shrinkage differs by arm, singleton vs non-singleton blending, and monomorphic/no-tract filtering", {
+  # Full end-to-end pipeline (real MSP + VCF text, not direct C calls) with
+  # K=3 (AFR/EUR/NAT) and two tracts straddling chr19's centromere
+  # (p_end=24498980, q_start=27190874), designed so p-arm and q-arm GLA
+  # differ measurably:
+  #
+  # p-arm tract [100,1000]: 6 samples, one of each pure/mixed combination
+  #   (S1=AFR/AFR, S2=EUR/EUR, S3=NAT/NAT, S4=AFR/EUR, S5=AFR/NAT, S6=EUR/NAT)
+  #   -> symmetric by construction: GLA_AFR = GLA_EUR = GLA_NAT = 1/3.
+  # q-arm tract [3e7,3.0001e7]: AFR-heavy (S1,S2,S3,S6=AFR/AFR, S4=AFR/EUR,
+  #   S5=AFR/NAT) -> GLA_AFR=5/6, GLA_EUR=1/12, GLA_NAT=1/12.
+  #
+  # Variants (chosen to be hand-verifiable):
+  #   V4 chr19:150   (p-arm) monomorphic (all hom-ref) -> filtered out
+  #   V3 chr19:200   (p-arm) singleton ambiguous AFR/NAT het (S5 only carrier)
+  #                  -> w=1, blends fully to GLA_AFR/(GLA_AFR+GLA_NAT) = 1/2
+  #                  (symmetric arm, so this also sanity-checks the old
+  #                  0.5/0.5 fallback is reproduced when GLA itself is 0.5)
+  #   V1 chr19:3e7+100 (q-arm) non-singleton ambiguous AFR/EUR het (S4),
+  #                  plus unambiguous S1 (pure AFR het) + S2 (pure AFR hom-alt)
+  #                  -> pk[AFR]=1 (D=3, num[AFR]=3, no EUR/NAT evidence at all),
+  #                  total_carriers=3 (S1,S2,S4), w=1/3,
+  #                  gla_frac_AFR(q) = (5/6)/(5/6+1/12) = 10/11,
+  #                  blended = (2/3)*1.0 + (1/3)*(10/11) = 32/33
+  #   V2 chr19:3e7+200 (q-arm) singleton ambiguous AFR/EUR het (S4 only carrier)
+  #                  -> w=1, blends fully to gla_frac_AFR(q) = 10/11
+  #   V5 chr19:99999999 (outside both tracts) -> dropped, "no tract"
+  td <- tempfile()
+  dir.create(td, recursive = TRUE)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+
+  samples <- paste0("S", 1:6)
+  hdr_samples <- paste(vapply(samples, function(s) paste0(s, c(".0", ".1")), character(2)), collapse = "\t")
+
+  msp <- tempfile(fileext = ".tsv.gz", tmpdir = td)
+  con <- gzfile(msp, "wt")
+  writeLines(c(
+    "#Subpopulation order/codes:\tAFR=0\tEUR=1\tNAT=2",
+    paste0("#chm\tspos\tepos\tsgpos\tegpos\tn snps\t", hdr_samples)
+  ), con)
+  writeLines(c(
+    # p-arm: S1=AFR/AFR S2=EUR/EUR S3=NAT/NAT S4=AFR/EUR S5=AFR/NAT S6=EUR/NAT
+    "chr19\t100\t1000\t0.1\t0.2\t10\t0\t0\t1\t1\t2\t2\t0\t1\t0\t2\t1\t2",
+    # q-arm: S1,S2,S3,S6=AFR/AFR  S4=AFR/EUR  S5=AFR/NAT
+    "chr19\t30000000\t30001000\t30.0\t30.1\t10\t0\t0\t0\t0\t0\t0\t0\t1\t0\t2\t0\t0"
+  ), con)
+  close(con)
+
+  gt_line <- function(pos, gts) paste(c("chr19", pos, ".", "A", "T", ".", "PASS", ".", "GT", gts), collapse = "\t")
+  vcf <- tempfile(fileext = ".vcf", tmpdir = td)
+  writeLines(c(
+    "##fileformat=VCFv4.2",
+    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+    paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", samples), collapse = "\t"),
+    gt_line(150,      c("0|0", "0|0", "0|0", "0|0", "0|0", "0|0")),  # V4: monomorphic
+    gt_line(200,      c("0|0", "0|0", "0|0", "0|0", "0|1", "0|0")),  # V3: p-arm singleton (S5)
+    gt_line(30000100, c("0|1", "1|1", "0|0", "0|1", "0|0", "0|0")),  # V1: q-arm non-singleton
+    gt_line(30000200, c("0|0", "0|0", "0|0", "0|1", "0|0", "0|0")),  # V2: q-arm singleton (S4)
+    gt_line(99999999, c("0|1", "0|0", "0|0", "0|0", "0|0", "0|0"))   # V5: outside any tract
+  ), vcf)
+
+  result <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19", verbose = FALSE)
+
+  # V4 (monomorphic) and V5 (no tract) both dropped -> 3 variants remain,
+  # in position order: V3(200), V1(30000100), V2(30000200)
+  expect_equal(nrow(result$variant_info), 3)
+  expect_equal(result$variant_info$pos, c(200, 30000100, 30000200))
+  expect_equal(result$overlap$n_monomorphic_filtered, 1)
+  expect_equal(result$overlap$n_no_tract, 1)
+
+  # V3: p-arm singleton AFR/NAT -> symmetric GLA -> 0.5/0.5
+  s5_idx <- match("S5", result$sample_ids)
+  expect_equal(result$AFR[1, s5_idx], 0.5, tolerance = 1e-9)
+  expect_equal(result$NAT[1, s5_idx], 0.5, tolerance = 1e-9)
+  expect_equal(result$EUR[1, s5_idx], 0, tolerance = 1e-9)
+
+  # V1: q-arm non-singleton AFR/EUR, partial shrinkage (w=1/3)
+  s4_idx <- match("S4", result$sample_ids)
+  expect_equal(result$AFR[2, s4_idx], 32/33, tolerance = 1e-9)
+  expect_equal(result$EUR[2, s4_idx], 1/33,  tolerance = 1e-9)
+  expect_equal(result$AFR[2, s4_idx] + result$EUR[2, s4_idx] + result$NAT[2, s4_idx], 1, tolerance = 1e-9)
+  # unambiguous pure-AFR carriers on the same variant are untouched by shrinkage
+  s1_idx <- match("S1", result$sample_ids)
+  s2_idx <- match("S2", result$sample_ids)
+  expect_equal(result$AFR[2, s1_idx], 1, tolerance = 1e-9)
+  expect_equal(result$AFR[2, s2_idx], 2, tolerance = 1e-9)
+
+  # V2: q-arm singleton AFR/EUR -> full shrinkage to GLA_AFR/(GLA_AFR+GLA_EUR) = 10/11
+  expect_equal(result$AFR[3, s4_idx], 10/11, tolerance = 1e-9)
+  expect_equal(result$EUR[3, s4_idx], 1/11,  tolerance = 1e-9)
+
+  # ancestry_counts for V1: 4 pure-AFR carriers (S1,S2,S3,S6) at that tract
+  expect_equal(unname(result$ancestry_counts[2, "AFR"]), 4)
+})
+
+test_that("ancestry_split K=3 haplotype mode deterministically splits via full MSP+VCF pipeline", {
+  # Same p-arm tract as the dosage-mode test above (symmetric K=3 design),
+  # but haplotype (phased) mode is fully deterministic -- no p[k] estimation
+  # or GLA shrinkage applies, so expected values are exact regardless of arm.
+  td <- tempfile()
+  dir.create(td, recursive = TRUE)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+
+  samples <- paste0("S", 1:6)
+  hdr_samples <- paste(vapply(samples, function(s) paste0(s, c(".0", ".1")), character(2)), collapse = "\t")
+
+  msp <- tempfile(fileext = ".tsv.gz", tmpdir = td)
+  con <- gzfile(msp, "wt")
+  writeLines(c(
+    "#Subpopulation order/codes:\tAFR=0\tEUR=1\tNAT=2",
+    paste0("#chm\tspos\tepos\tsgpos\tegpos\tn snps\t", hdr_samples)
+  ), con)
+  writeLines(c(
+    "chr19\t100\t1000\t0.1\t0.2\t10\t0\t0\t1\t1\t2\t2\t0\t1\t0\t2\t1\t2"
+  ), con)
+  close(con)
+
+  vcf <- tempfile(fileext = ".vcf", tmpdir = td)
+  writeLines(c(
+    "##fileformat=VCFv4.2",
+    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+    paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", samples), collapse = "\t"),
+    # S1(AFR/AFR)=1|0 S2(EUR/EUR)=1|1 S3(NAT/NAT)=0|1
+    # S4(AFR/EUR)=1|0 S5(AFR/NAT)=0|1 S6(EUR/NAT)=1|1
+    paste(c("chr19", 300, ".", "A", "T", ".", "PASS", ".", "GT",
+            "1|0", "1|1", "0|1", "1|0", "0|1", "1|1"), collapse = "\t")
+  ), vcf)
+
+  result <- ancestry_split(vcf, msp, mode = "haplotype", chrom = "chr19", verbose = FALSE)
+
+  idx <- match(paste0("S", 1:6), result$sample_ids)
+  expect_equal(result$AFR[1, idx], c(1, 0, 0, 1, 0, 0), tolerance = 1e-9)
+  expect_equal(result$EUR[1, idx], c(0, 2, 0, 0, 0, 1), tolerance = 1e-9)
+  expect_equal(result$NAT[1, idx], c(0, 0, 1, 0, 1, 1), tolerance = 1e-9)
 })
 
 # ============================================================================

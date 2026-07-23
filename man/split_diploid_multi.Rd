@@ -4,7 +4,14 @@
 \alias{split_diploid_multi}
 \title{Split unphased genotype matrix by ancestry for K populations}
 \usage{
-split_diploid_multi(gt_genotype, ancestry, pure_codes, mixed_codes)
+split_diploid_multi(
+  gt_genotype,
+  ancestry,
+  pure_codes,
+  mixed_codes,
+  gla = NULL,
+  arm_id = NULL
+)
 }
 \arguments{
 \item{gt_genotype}{Integer matrix (variants x samples) of genotypes (0/1/2).}
@@ -27,6 +34,16 @@ Example: \code{c(AFR = 3L, EUR = 1L, NAT = 4L)}.}
 One row per mixed-ancestry diploid type.
 Example for 3 populations:
 \code{data.frame(code=c(2L,5L,6L), pop1=c("AFR","AFR","EUR"), pop2=c("EUR","NAT","NAT"))}}
+
+\item{gla}{Optional 2 x K numeric matrix (rows "p"/"q", columns matching
+\code{names(pure_codes)}) of per-arm global local ancestry proportions,
+as produced by \code{\link{ancestry_split}} internally. When \code{NULL}
+(default), GLA shrinkage is disabled and behavior matches the original
+p[k] estimator exactly, including its 0.5/0.5 singleton fallback.}
+
+\item{arm_id}{Optional integer vector (length = \code{nrow(gt_genotype)})
+giving each variant's row index into \code{gla} (0-based). Required
+together with \code{gla}.}
 }
 \value{
 Named list of K numeric matrices (variants x samples), one per

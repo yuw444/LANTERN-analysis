@@ -1,4 +1,5 @@
 ^src/AGENTS\.md$
+^data-raw$
 ^docs$
 ^lantern\.Rcheck$
 ^.*\.tar\.gz$

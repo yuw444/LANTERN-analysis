@@ -51,6 +51,20 @@ Complete pipeline: split genotype matrix by ancestry, return dosage matrices.
 Handles sample and variant mismatches by using only overlapping data.
 Memory efficient: single-pass subsetting using index vectors.
 }
+\section{GLA shrinkage}{
+ The \code{vcf_path}/\code{msp_path} shortcut
+  delegates to \code{\link{ancestry_split}}, which computes and applies
+  per-arm global local ancestry (GLA) shrinkage automatically from tract
+  positions. The direct \code{gt_matrix}/\code{pt_matrix} path has no
+  genomic position information and cannot derive GLA automatically, so it
+  always uses the original (unshrunk) p1/p2 estimator; this path also
+  reorders and filters variants internally (sample/region overlap,
+  monomorphic removal), so a caller-supplied \code{gla}/\code{arm_id}
+  could not be reliably kept aligned. Call \code{\link{split_diploid}}
+  directly (no internal reordering) if you need GLA shrinkage with a
+  pre-computed \code{gla}/\code{arm_id} of your own.
+}
+
 \examples{
 # Example with mismatched dimensions
 gt <- matrix(c(2, 1, 0, 1, 2, 1), nrow = 2, ncol = 3,

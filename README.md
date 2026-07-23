@@ -273,11 +273,7 @@ Matrix-in, matrix-out primitives (C backend), used internally by the pipelines a
 | Function | Description |
 |----------|-------------|
 | `count_ancestry_codes(mat, code)` | Count occurrences of an ancestry code in each row of a PT matrix. |
-| `create_ancestry_vcfs(vcf_path, gt_matrix, pt_matrix, ...)` | Create ancestry-specific VCF files from a VCF template plus GT/PT matrices. |
-| `write_vcf_with_ancestry(vcf_path, gt_matrix, ancestry_matrix, ...)` | Write separate African/European VCF files from dosage matrices. |
 | `write_dosage_gds(dosage_mat, variant_info, sample_ids, gds_path)` | Convert an ancestry-specific dosage matrix to a SeqArray GDS file (for `GMMAT::SMMAT()`). |
-| `subset_vcf_by_range(vcf_path, chrom, start, end, output_path)` | Extract variants within a genomic region from a VCF. |
-| `calc_gene_ancestry_weights(pt_matrix, sample_ids, gene_data)` | Calculate median ancestry counts for samples within each gene's region. |
 
 ### Statistics
 

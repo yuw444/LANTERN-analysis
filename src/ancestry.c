@@ -59,57 +59,89 @@ static SEXP count_ancestry_codes_c(SEXP mat, SEXP code) {
 // ============================================================================
 // split_by_ancestry: Split genotype matrix by ancestry with proper p1/p2
 // ============================================================================
-static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
+// gla: 2 x 2 numeric matrix (rows: arm 0=p/1=q, cols: 0=AFR/1=EUR) of
+//   per-arm global local ancestry proportions, or a zero-length vector to
+//   disable GLA shrinkage entirely (reproduces the pre-shrinkage behavior
+//   bit-for-bit). arm_id: integer vector (length nrow) giving each variant's
+//   arm index into `gla`'s rows; ignored when gla is empty.
+static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry, SEXP gla, SEXP arm_id) {
     SEXP gt_int = PROTECT(coerceVector(gt_genotype, INTSXP));
     SEXP an_int = PROTECT(coerceVector(ancestry, INTSXP));
     SEXP dim = PROTECT(getAttrib(gt_int, R_DimSymbol));
-    
+
     int nrow = INTEGER(dim)[0];
     int ncol = INTEGER(dim)[1];
-    
+
+    int have_gla = length(gla) > 0;
+    SEXP gla_real = PROTECT(coerceVector(gla, REALSXP));
+    SEXP arm_int  = PROTECT(coerceVector(arm_id, INTSXP));
+    double *gla_ptr = REAL(gla_real);
+    int *arm_ptr    = INTEGER(arm_int);
+    int n_arms      = have_gla ? INTEGER(getAttrib(gla_real, R_DimSymbol))[0] : 0;
+
     // Allocate output matrices
     SEXP african = PROTECT(allocMatrix(REALSXP, nrow, ncol));
     SEXP european = PROTECT(allocMatrix(REALSXP, nrow, ncol));
-    
+
     int *gt_ptr = INTEGER(gt_int);
     int *an_ptr = INTEGER(an_int);
     double *afr_ptr = REAL(african);
     double *eur_ptr = REAL(european);
-    
+
     // Process each variant (row)
     for (int i = 0; i < nrow; i++) {
         // Count ancestry-genotype combinations for this variant
         VariantCounts cnt = count_variant_combinations(gt_ptr, an_ptr, nrow, ncol, i);
-        
-        // Calculate p1 and p2
+
+        // Raw (unshrunk) p1/p2:
         // p1 = (2*N1 + N2 + N4) / (2*N1 + N2 + 2*N4 + 2*N7 + N8)
         // p2 = (N4 + 2*N7 + N8) / (2*N1 + N2 + 2*N4 + 2*N7 + N8)
-        // 
-        // Singleton case: if N5 == sum(gt), p1 = p2 = 0.5
-        
         double total_alt = 2 * cnt.N1 + cnt.N2 + 2 * cnt.N4 + cnt.N5 + 2 * cnt.N7 + cnt.N8;
-        double p1, p2;
-        
-        if (cnt.N5 > 0 && total_alt == (double)cnt.N5) {
-            // Singleton case: all alt alleles are from mixed het individuals
-            p1 = 0.5;
-            p2 = 0.5;
+        double denominator = total_alt - cnt.N5;   // excludes ambiguous mixed hets (N5)
+        double p1_raw, p2_raw;
+        if (denominator > 0.0) {
+            p1_raw = (2.0 * cnt.N1 + cnt.N2 + cnt.N4) / denominator;
+            p2_raw = (cnt.N4 + 2.0 * cnt.N7 + cnt.N8) / denominator;
         } else {
-            // Denominator excludes heterozygous mixed (N5) - those are split
-            double denominator = total_alt - cnt.N5;
-            
-            if (denominator > 0) {
-                double numerator_p1 = 2.0 * cnt.N1 + cnt.N2 + cnt.N4;
-                double numerator_p2 = cnt.N4 + 2.0 * cnt.N7 + cnt.N8;
-                p1 = numerator_p1 / denominator;
-                p2 = numerator_p2 / denominator;
+            p1_raw = 0.0;
+            p2_raw = 0.0;
+        }
+
+        double p1, p2;
+        if (!have_gla) {
+            // No GLA supplied: reproduce the original (pre-shrinkage) behavior
+            // exactly, including its hardcoded 0.5/0.5 singleton fallback.
+            if (cnt.N5 > 0 && total_alt == (double)cnt.N5) {
+                p1 = 0.5;
+                p2 = 0.5;
+            } else if (cnt.N5 != 0 && denominator > 0.0) {
+                p1 = p1_raw;
+                p2 = p2_raw;
             } else {
-                // Edge case: no minor allele observed in the entire sample (all gt=0 or missing)
-                p1 = 0.0f;
-                p2 = 0.0f;
+                p1 = 0.0;
+                p2 = 0.0;
+            }
+        } else {
+            // GLA-shrinkage: w is the fraction of alt-carrying individuals
+            // whose ancestry-of-origin is ambiguous (mixed het, N5). The
+            // more ambiguous evidence dominates, the more p1/p2 shrinks
+            // toward this variant's arm-level global ancestry proportion.
+            // w == 1 (all evidence ambiguous) reduces to p1 = GLA exactly,
+            // subsuming the old singleton special case.
+            int total_carriers = cnt.N1 + cnt.N2 + cnt.N4 + cnt.N5 + cnt.N7 + cnt.N8;
+            if (total_carriers > 0) {
+                double w = (double) cnt.N5 / (double) total_carriers;
+                int arm = arm_ptr[i];
+                double gla_p1 = gla_ptr[arm + n_arms * 0];
+                double gla_p2 = gla_ptr[arm + n_arms * 1];
+                p1 = (1.0 - w) * p1_raw + w * gla_p1;
+                p2 = (1.0 - w) * p2_raw + w * gla_p2;
+            } else {
+                p1 = 0.0;
+                p2 = 0.0;
             }
         }
-        
+
         // Apply splitting to each sample
         for (int j = 0; j < ncol; j++) {
             int gt = gt_ptr[i + nrow * j];
@@ -155,15 +187,15 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry) {
     SET_STRING_ELT(names, 0, mkChar("african"));
     SET_STRING_ELT(names, 1, mkChar("european"));
     setAttrib(result, R_NamesSymbol, names);
-    
-    UNPROTECT(7);
+
+    UNPROTECT(9);
     return result;
 }
 
 // ============================================================================
 // read_bed_file: Read PLINK binary files
 // ============================================================================
-static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sample_indices) {
+static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path) {
     const char *bed = CHAR(STRING_ELT(bed_path, 0));
     const char *bim = CHAR(STRING_ELT(bim_path, 0));
     const char *fam = CHAR(STRING_ELT(fam_path, 0));
@@ -242,158 +274,6 @@ static SEXP read_bed_file_c(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sa
 }
 
 // ============================================================================
-// write_vcf_with_ancestry: Write VCF with ancestry-specific dosages
-// ============================================================================
-static SEXP write_vcf_with_ancestry_c(SEXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix, 
-                                        SEXP output_african, SEXP output_european) {
-    const char *vcf_in = CHAR(STRING_ELT(vcf_path, 0));
-    const char *vcf_afr = CHAR(STRING_ELT(output_african, 0));
-    const char *vcf_eur = CHAR(STRING_ELT(output_european, 0));
-    
-    int nrow = INTEGER(gt_matrix)[0];
-    
-    FILE *in = fopen(vcf_in, "r");
-    if (!in) error("Cannot open input VCF: %s", vcf_in);
-    
-    FILE *out_afr = fopen(vcf_afr, "w");
-    if (!out_afr) { fclose(in); error("Cannot open output VCF: %s", vcf_afr); }
-    
-    FILE *out_eur = fopen(vcf_eur, "w");
-    if (!out_eur) { fclose(in); fclose(out_afr); error("Cannot open output VCF: %s", vcf_eur); }
-    
-    char line[10000];
-    while (fgets(line, sizeof(line), in)) {
-        if (line[0] == '#') {
-            fprintf(out_afr, "%s", line);
-            fprintf(out_eur, "%s", line);
-            continue;
-        }
-        
-        char *fields[10];
-        int n = 0;
-        char *ptr = line;
-        while ((fields[n] = strtok(ptr, "\t\n")) != NULL) {
-            n++;
-            ptr = NULL;
-        }
-        
-        fprintf(out_afr, "%s\t%s\t%s\t%s\t%s\t", fields[0], fields[1], fields[2], fields[3], fields[4]);
-        fprintf(out_eur, "%s\t%s\t%s\t%s\t%s\t", fields[0], fields[1], fields[2], fields[3], fields[4]);
-        
-        for (int i = 9; i < n; i++) {
-            if (i > 9) {
-                fprintf(out_afr, "\t");
-                fprintf(out_eur, "\t");
-            }
-            
-            int sample_idx = i - 9;
-            int gt = INTEGER(gt_matrix)[sample_idx + nrow * (i - 9)];
-            int an = INTEGER(ancestry_matrix)[sample_idx + nrow * (i - 9)];
-            
-            char gt_afr[20], gt_eur[20];
-            double ds_afr, ds_eur;
-            
-            if (an == 3) {
-                snprintf(gt_afr, 20, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
-                snprintf(gt_eur, 20, "0/0");
-                ds_afr = gt > 0 ? (gt > 1 ? 2.0 : 1.0) : 0.0;
-                ds_eur = 0.0;
-            } else if (an == 1) {
-                snprintf(gt_afr, 20, "0/0");
-                snprintf(gt_eur, 20, "%d/%d", gt > 0 ? 1 : 0, gt > 1 ? 1 : 0);
-                ds_afr = 0.0;
-                ds_eur = gt > 0 ? (gt > 1 ? 2.0 : 1.0) : 0.0;
-            } else if (an == 2) {
-                if (gt == 2) {
-                    snprintf(gt_afr, 20, "1/0");
-                    snprintf(gt_eur, 20, "0/1");
-                    ds_afr = 1.0;
-                    ds_eur = 1.0;
-                } else if (gt == 1) {
-                    snprintf(gt_afr, 20, "0/1");
-                    snprintf(gt_eur, 20, "0/1");
-                    ds_afr = 0.5;
-                    ds_eur = 0.5;
-                } else {
-                    snprintf(gt_afr, 20, "0/0");
-                    snprintf(gt_eur, 20, "0/0");
-                    ds_afr = 0.0;
-                    ds_eur = 0.0;
-                }
-            } else {
-                snprintf(gt_afr, 20, "0/0");
-                snprintf(gt_eur, 20, "0/0");
-                ds_afr = 0.0;
-                ds_eur = 0.0;
-            }
-            
-            if (i == 9) {
-                fprintf(out_afr, "GT:DS");
-                fprintf(out_eur, "GT:DS");
-            }
-            
-            fprintf(out_afr, "\t%s:%.2f", gt_afr, ds_afr);
-            fprintf(out_eur, "\t%s:%.2f", gt_eur, ds_eur);
-        }
-        fprintf(out_afr, "\n");
-        fprintf(out_eur, "\n");
-    }
-    
-    fclose(in);
-    fclose(out_afr);
-    fclose(out_eur);
-    
-    return R_NilValue;
-}
-
-// ============================================================================
-// subset_vcf_by_range: Extract VCF region
-// ============================================================================
-static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP end, SEXP output_path) {
-    const char *in_vcf = CHAR(STRING_ELT(vcf_path, 0));
-    const char *out = CHAR(STRING_ELT(output_path, 0));
-    const char *chr = CHAR(STRING_ELT(chrom, 0));
-    int pos_start = INTEGER(start)[0];
-    int pos_end = INTEGER(end)[0];
-    
-    FILE *in = fopen(in_vcf, "r");
-    if (!in) error("Cannot open VCF: %s", in_vcf);
-    
-    FILE *outf = fopen(out, "w");
-    if (!outf) { fclose(in); error("Cannot open output: %s", out); }
-    
-    char line[10000];
-    while (fgets(line, sizeof(line), in)) {
-        if (line[0] == '#') {
-            fprintf(outf, "%s", line);
-            continue;
-        }
-        
-        char *fields[10];
-        int n = 0;
-        char *ptr = line;
-        while ((fields[n] = strtok(ptr, "\t\n")) != NULL) {
-            n++;
-            ptr = NULL;
-        }
-        
-        if (n < 2) continue;
-        
-        if (strcmp(fields[0], chr) == 0) {
-            int pos = atoi(fields[1]);
-            if (pos >= pos_start && pos <= pos_end) {
-                fprintf(outf, "%s", line);
-            }
-        }
-    }
-    
-    fclose(in);
-    fclose(outf);
-    
-    return R_NilValue;
-}
-
-// ============================================================================
 // split_by_ancestry_multi: K-population unphased dosage splitting
 // ============================================================================
 //
@@ -419,9 +299,15 @@ static SEXP subset_vcf_by_range_c(SEXP vcf_path, SEXP chrom, SEXP start, SEXP en
 //   m_code      int vector length M: mixed-ancestry codes
 //   m_pop1      int vector length M: 0-based index of parent pop 1 in pure_codes
 //   m_pop2      int vector length M: 0-based index of parent pop 2 in pure_codes
+//   gla         n_arms x K numeric matrix of per-arm global local ancestry
+//               proportions, or zero-length to disable GLA shrinkage
+//               (reproduces the pre-shrinkage behavior bit-for-bit)
+//   arm_id      int vector length nrow: each variant's arm index into gla's
+//               rows; ignored when gla is empty
 static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
                                         SEXP pure_codes,
-                                        SEXP m_code, SEXP m_pop1, SEXP m_pop2) {
+                                        SEXP m_code, SEXP m_pop1, SEXP m_pop2,
+                                        SEXP gla, SEXP arm_id) {
     int K = length(pure_codes);
     int M = length(m_code);
     int *pure = INTEGER(pure_codes);
@@ -439,6 +325,13 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
     int *gp    = INTEGER(gt_i);
     int *ap    = INTEGER(anc_i);
 
+    int have_gla = length(gla) > 0;
+    SEXP gla_real = PROTECT(coerceVector(gla, REALSXP));
+    SEXP arm_int  = PROTECT(coerceVector(arm_id, INTSXP));
+    double *gla_ptr = REAL(gla_real);
+    int *arm_ptr    = INTEGER(arm_int);
+    int n_arms      = have_gla ? INTEGER(getAttrib(gla_real, R_DimSymbol))[0] : 0;
+
     /* Allocate K output matrices */
     SEXP result = PROTECT(allocVector(VECSXP, K));
     for (int p = 0; p < K; p++) {
@@ -454,17 +347,21 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
     /* Per-variant working buffers (freed automatically by R_alloc) */
     double *num = (double *) R_alloc(K, sizeof(double));
     double *pk  = (double *) R_alloc(K, sizeof(double));
+    int    *amb = (int *)    R_alloc(M, sizeof(int));   /* ambiguous-het count per mixed pair */
 
     for (int i = 0; i < nrow; i++) {
 
         /* -- Step 1: accumulate unambiguous alt allele counts -- */
         double D = 0.0;
+        int total_carriers = 0;   /* any sample with g > 0, any category */
         memset(num, 0, K * sizeof(double));
+        memset(amb, 0, M * sizeof(int));
 
         for (int j = 0; j < ncol; j++) {
             int g = gp[i + nrow * j];
             int a = ap[i + nrow * j];
             if (g == 0) continue;
+            total_carriers++;
 
             /* pure ancestry */
             int hit = 0;
@@ -486,8 +383,13 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
                         break;
                     }
                 }
+            } else {
+                /* mixed gt==1: ambiguous, excluded from Step 1's num/D but
+                   tracked per-pair for the GLA shrinkage weight below */
+                for (int m = 0; m < M; m++) {
+                    if (a == mc[m]) { amb[m]++; break; }
+                }
             }
-            /* mixed gt==1: ambiguous, excluded from Step 1 */
         }
 
         /* -- Compute p[k] -- */
@@ -495,6 +397,8 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
             for (int p = 0; p < K; p++) pk[p] = num[p] / D;
         else
             memset(pk, 0, K * sizeof(double));  /* singleton case handled per-pair */
+
+        int arm = have_gla ? arm_ptr[i] : 0;
 
         /* -- Step 2: assign dosages -- */
         for (int j = 0; j < ncol; j++) {
@@ -520,15 +424,36 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
                     if (g == 2) {
                         out[pa][idx] = 1.0;
                         out[pb][idx] = 1.0;
-                    } else {    /* g == 1: ambiguous het */
+                    } else if (!have_gla) {
+                        /* No GLA supplied: reproduce original behavior
+                           exactly, including its 0.5/0.5 singleton fallback. */
                         double sum_ab = pk[pa] + pk[pb];
                         if (sum_ab > 0.0) {
                             out[pa][idx] = pk[pa] / sum_ab;
                             out[pb][idx] = pk[pb] / sum_ab;
                         } else {
-                            out[pa][idx] = 0.5;   /* singleton fallback */
+                            out[pa][idx] = 0.5;
                             out[pb][idx] = 0.5;
                         }
+                    } else {
+                        /* GLA shrinkage: w is the fraction of alt-carrying
+                           individuals (any category) whose ancestry-of-origin
+                           is ambiguous for this specific pair. Raw pair ratio
+                           collapses to the GLA conditional fraction when this
+                           pair has no unambiguous hom-alt evidence of its
+                           own, so blending is well-defined even at w < 1. */
+                        double gla_pa = gla_ptr[arm + n_arms * pa];
+                        double gla_pb = gla_ptr[arm + n_arms * pb];
+                        double gla_sum = gla_pa + gla_pb;
+                        double gla_frac_pa = (gla_sum > 0.0) ? gla_pa / gla_sum : 0.5;
+
+                        double sum_ab = pk[pa] + pk[pb];
+                        double pa_raw = (sum_ab > 0.0) ? pk[pa] / sum_ab : gla_frac_pa;
+
+                        double w = (double) amb[m] / (double) total_carriers;
+                        double blended_pa = (1.0 - w) * pa_raw + w * gla_frac_pa;
+                        out[pa][idx] = blended_pa;
+                        out[pb][idx] = 1.0 - blended_pa;
                     }
                     break;
                 }
@@ -537,7 +462,7 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
         }
     }
 
-    UNPROTECT(4);   /* dim, gt_i, anc_i, result */
+    UNPROTECT(6);   /* dim, gt_i, anc_i, gla_real, arm_int, result */
     return result;
 }
 
@@ -682,21 +607,12 @@ SEXP count_ancestry_codes(SEXP mat, SEXP code) {
     return count_ancestry_codes_c(mat, code);
 }
 
-SEXP split_by_ancestry(SEXP gt_genotype, SEXP ancestry) {
-    return split_by_ancestry_c(gt_genotype, ancestry);
+SEXP split_by_ancestry(SEXP gt_genotype, SEXP ancestry, SEXP gla, SEXP arm_id) {
+    return split_by_ancestry_c(gt_genotype, ancestry, gla, arm_id);
 }
 
-SEXP read_bed_file(SEXP bed_path, SEXP bim_path, SEXP fam_path, SEXP sample_indices) {
-    return read_bed_file_c(bed_path, bim_path, fam_path, sample_indices);
-}
-
-SEXP write_vcf_with_ancestry(SEXP vcf_path, SEXP gt_matrix, SEXP ancestry_matrix, 
-                              SEXP output_african, SEXP output_european) {
-    return write_vcf_with_ancestry_c(vcf_path, gt_matrix, ancestry_matrix, output_african, output_european);
-}
-
-SEXP subset_vcf_by_range(SEXP vcf_path, SEXP chrom, SEXP start, SEXP end, SEXP output_path) {
-    return subset_vcf_by_range_c(vcf_path, chrom, start, end, output_path);
+SEXP read_bed_file(SEXP bed_path, SEXP bim_path, SEXP fam_path) {
+    return read_bed_file_c(bed_path, bim_path, fam_path);
 }
 
 SEXP split_phased_multi(SEXP gt_hap0, SEXP gt_hap1,
@@ -705,9 +621,10 @@ SEXP split_phased_multi(SEXP gt_hap0, SEXP gt_hap1,
 }
 
 SEXP split_by_ancestry_multi(SEXP gt, SEXP ancestry, SEXP pure_codes,
-                               SEXP m_code, SEXP m_pop1, SEXP m_pop2) {
+                               SEXP m_code, SEXP m_pop1, SEXP m_pop2,
+                               SEXP gla, SEXP arm_id) {
     return split_by_ancestry_multi_c(gt, ancestry, pure_codes,
-                                     m_code, m_pop1, m_pop2);
+                                     m_code, m_pop1, m_pop2, gla, arm_id);
 }
 
 SEXP split_phased_by_ancestry(SEXP gt_hap0, SEXP gt_hap1,

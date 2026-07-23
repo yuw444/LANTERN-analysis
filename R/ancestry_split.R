@@ -17,10 +17,24 @@
     .Call("count_ancestry_codes_C", mat, code, PACKAGE = "lantern")
 }
 
-.split_diploid <- function(gt_genotype, ancestry) {
+#' Normalize gla/arm_id into .Call-ready sentinels
+#'
+#' \code{gla = NULL} (either argument NULL) disables GLA shrinkage: an empty
+#' matrix/vector signal the C side to reproduce the pre-shrinkage behavior
+#' exactly (see \code{ancestry.c}).
+#' @keywords internal
+.gla_call_args <- function(gla, arm_id) {
+  if (is.null(gla) || is.null(arm_id))
+    return(list(gla = matrix(numeric(0), nrow = 0, ncol = 0), arm_id = integer(0)))
+  storage.mode(gla) <- "double"
+  list(gla = gla, arm_id = as.integer(arm_id))
+}
+
+.split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
     storage.mode(gt_genotype) <- "integer"
     storage.mode(ancestry) <- "integer"
-    .Call("split_by_ancestry_C", gt_genotype, ancestry, PACKAGE = "lantern")
+    g <- .gla_call_args(gla, arm_id)
+    .Call("split_by_ancestry_C", gt_genotype, ancestry, g$gla, g$arm_id, PACKAGE = "lantern")
 }
 
 .split_haplotype <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
@@ -88,9 +102,18 @@ count_ancestry_codes <- function(mat, code) {
 #' result$african
 #' result$european
 #'
+#' @param gla Optional 2 x K numeric matrix (rows "p"/"q", columns population
+#'   names) of per-arm global local ancestry proportions, as produced by
+#'   \code{\link{ancestry_split}} internally. When \code{NULL} (default),
+#'   GLA shrinkage is disabled and behavior matches the original p1/p2
+#'   estimator exactly, including its 0.5/0.5 singleton fallback.
+#' @param arm_id Optional integer vector (length = \code{nrow(gt_genotype)})
+#'   giving each variant's row index into \code{gla} (0-based). Required
+#'   together with \code{gla}.
+#'
 #' @export
-split_diploid <- function(gt_genotype, ancestry) {
-    .split_diploid(gt_genotype, ancestry)
+split_diploid <- function(gt_genotype, ancestry, gla = NULL, arm_id = NULL) {
+    .split_diploid(gt_genotype, ancestry, gla, arm_id)
 }
 
 #' Split unphased genotype matrix by ancestry for K populations
@@ -147,9 +170,19 @@ split_diploid <- function(gt_genotype, ancestry) {
 #' out <- split_diploid_multi(gt, anc, pure, mixed)
 #' names(out)   # "AFR" "EUR" "NAT"
 #'
+#' @param gla Optional 2 x K numeric matrix (rows "p"/"q", columns matching
+#'   \code{names(pure_codes)}) of per-arm global local ancestry proportions,
+#'   as produced by \code{\link{ancestry_split}} internally. When \code{NULL}
+#'   (default), GLA shrinkage is disabled and behavior matches the original
+#'   p[k] estimator exactly, including its 0.5/0.5 singleton fallback.
+#' @param arm_id Optional integer vector (length = \code{nrow(gt_genotype)})
+#'   giving each variant's row index into \code{gla} (0-based). Required
+#'   together with \code{gla}.
+#'
 #' @export
 split_diploid_multi <- function(gt_genotype, ancestry,
-                                     pure_codes, mixed_codes) {
+                                     pure_codes, mixed_codes,
+                                     gla = NULL, arm_id = NULL) {
     if (is.null(names(pure_codes)))
         stop("pure_codes must be a named integer vector, e.g. c(AFR=3L, EUR=1L)")
     if (!is.data.frame(mixed_codes) ||
@@ -160,6 +193,9 @@ split_diploid_multi <- function(gt_genotype, ancestry,
     if (length(bad))
         stop("mixed_codes references populations not in pure_codes: ",
              paste(bad, collapse = ", "))
+    if (!is.null(gla) && !identical(colnames(gla), pop_names))
+        stop("gla's columns must match names(pure_codes) exactly, in order: ",
+             paste(pop_names, collapse = ", "))
 
     storage.mode(gt_genotype) <- "integer"
     storage.mode(ancestry)    <- "integer"
@@ -168,10 +204,12 @@ split_diploid_multi <- function(gt_genotype, ancestry,
     m_code <- as.integer(mixed_codes$code)
     m_pop1 <- match(mixed_codes$pop1, pop_names) - 1L   # 0-based index
     m_pop2 <- match(mixed_codes$pop2, pop_names) - 1L
+    g <- .gla_call_args(gla, arm_id)
 
     result <- .Call("split_by_ancestry_multi_C",
                     gt_genotype, ancestry,
                     pure_codes, m_code, m_pop1, m_pop2,
+                    g$gla, g$arm_id,
                     PACKAGE = "lantern")
     names(result) <- pop_names
     result
@@ -305,7 +343,7 @@ read_bed_file <- function(bed, bim, fam) {
   variant_ids <- as.character(bim_dt[[2]])
   sample_ids  <- as.character(fam_dt[[2]])
 
-  mat <- .Call("read_bed_file_C", bed, bim, fam, integer(0), PACKAGE = "lantern")
+  mat <- .Call("read_bed_file_C", bed, bim, fam, PACKAGE = "lantern")
   dimnames(mat) <- list(variant_ids, sample_ids)
   mat
 }
@@ -660,6 +698,8 @@ read_bed_file <- function(bed, bim, fam) {
     gt_hap1_mat     = gt_hap1_mat,
     anc_hap0_var    = anc_hap0_var,
     anc_hap1_var    = anc_hap1_var,
+    anc_hap0_tract  = anc_hap0_common,
+    anc_hap1_tract  = anc_hap1_common,
     variant_info    = variant_info,
     common_samples  = common_samples,
     pop_codes       = pop_codes,
@@ -786,6 +826,36 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
   anc_diploid <- matrix(lookup[cbind(as.vector(p0_mat), as.vector(p1_mat))],
                          nrow = n_variants, ncol = length(common_samples))
 
+  # ---- GLA shrinkage target (dosage mode only; haplotype splitting is
+  # deterministic and has no ambiguous ratio to shrink) ----
+  gla_combined <- NULL
+  arm_id       <- NULL
+  if (mode == "dosage") {
+    if (verbose) message("\nStep 6b: Computing per-arm global local ancestry (GLA)...")
+    anc_hap0_tract <- common$anc_hap0_tract
+    anc_hap1_tract <- common$anc_hap1_tract
+    n_tracts       <- ncol(anc_hap0_tract)
+    p0_tract_mat <- matrix(match(as.vector(anc_hap0_tract), hap_codes_v),
+                            nrow = length(common_samples), ncol = n_tracts)
+    p1_tract_mat <- matrix(match(as.vector(anc_hap1_tract), hap_codes_v),
+                            nrow = length(common_samples), ncol = n_tracts)
+    anc_diploid_tract <- matrix(lookup[cbind(as.vector(p0_tract_mat), as.vector(p1_tract_mat))],
+                                 nrow = length(common_samples), ncol = n_tracts)
+
+    gla_by_chrom <- .compute_arm_gla(common$tract_df, anc_diploid_tract,
+                                      pure_codes_named, mixed_codes_df)
+    gla_combined <- do.call(rbind, gla_by_chrom)
+    rownames(gla_combined) <- unlist(lapply(names(gla_by_chrom), function(cc) paste0(cc, c(".p", ".q"))))
+
+    variant_key <- paste0("chr", sub("^chr", "", variant_info$chrom),
+                          ifelse(.assign_arm(variant_info$chrom, variant_info$pos) == 0L, ".p", ".q"))
+    arm_id <- match(variant_key, rownames(gla_combined)) - 1L   # 0-based for C
+    if (anyNA(arm_id))
+      stop("Internal error: ", sum(is.na(arm_id)), " variant(s) have no matching ",
+           "arm/GLA entry (chrom+arm not found in gla_combined) -- this should be ",
+           "unreachable given .parse_vcf_msp_common()'s tract filtering; please report.")
+  }
+
   # ---- Split by ancestry ----
   if (verbose) message("\nStep 7: Splitting genotypes by ancestry (", mode, ")...")
   if (mode == "haplotype") {
@@ -795,7 +865,8 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
   } else {
     gt_diploid <- gt_hap0_mat + gt_hap1_mat
     res <- split_diploid_multi(gt_diploid, anc_diploid,
-                                pure_codes_named, mixed_codes_df)
+                                pure_codes_named, mixed_codes_df,
+                                gla = gla_combined, arm_id = arm_id)
   }
 
   # ---- Per-variant pure-ancestry sample counts (feeds Step 3 gene weights) ----
@@ -867,6 +938,18 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
 #' @param chrom Chromosome name to restrict to (e.g. \code{"chr19"}).
 #'   Only used when \code{vcf_path}/\code{msp_path} are supplied.
 #' @param verbose Print progress messages (default TRUE)
+#'
+#' @section GLA shrinkage: The \code{vcf_path}/\code{msp_path} shortcut
+#'   delegates to \code{\link{ancestry_split}}, which computes and applies
+#'   per-arm global local ancestry (GLA) shrinkage automatically from tract
+#'   positions. The direct \code{gt_matrix}/\code{pt_matrix} path has no
+#'   genomic position information and cannot derive GLA automatically, so it
+#'   always uses the original (unshrunk) p1/p2 estimator; this path also
+#'   reorders and filters variants internally (sample/region overlap,
+#'   monomorphic removal), so a caller-supplied \code{gla}/\code{arm_id}
+#'   could not be reliably kept aligned. Call \code{\link{split_diploid}}
+#'   directly (no internal reordering) if you need GLA shrinkage with a
+#'   pre-computed \code{gla}/\code{arm_id} of your own.
 #'
 #' @return List with elements:
 #'   \item{african}{African ancestry-specific dosage matrix}

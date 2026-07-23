@@ -4,7 +4,7 @@
 \alias{split_diploid}
 \title{Split genotype matrix by ancestry}
 \usage{
-split_diploid(gt_genotype, ancestry)
+split_diploid(gt_genotype, ancestry, gla = NULL, arm_id = NULL)
 }
 \arguments{
 \item{gt_genotype}{Integer matrix of genotypes (0, 1, 2)
@@ -14,6 +14,16 @@ split_diploid(gt_genotype, ancestry)
 \item{ancestry}{Integer matrix of ancestry codes (1, 2, 3)
 - Same dimensions as gt_genotype
 - Values: 1=EUR/EUR, 2=AFR/EUR (mixed), 3=AFR/AFR}
+
+\item{gla}{Optional 2 x K numeric matrix (rows "p"/"q", columns population
+names) of per-arm global local ancestry proportions, as produced by
+\code{\link{ancestry_split}} internally. When \code{NULL} (default),
+GLA shrinkage is disabled and behavior matches the original p1/p2
+estimator exactly, including its 0.5/0.5 singleton fallback.}
+
+\item{arm_id}{Optional integer vector (length = \code{nrow(gt_genotype)})
+giving each variant's row index into \code{gla} (0-based). Required
+together with \code{gla}.}
 }
 \value{
 List with two elements:
