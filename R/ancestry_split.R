@@ -750,6 +750,16 @@ read_bed_file <- function(bed, bim, fam) {
 #'   "chr" matches) -- other chromosomes' genotypes are never read into R.
 #'   If the contig can't be resolved, all variants are queried and filtered
 #'   in R instead (slower, more memory, same result).
+#' @param use_gla Logical, \code{mode = "dosage"} only. When \code{TRUE}
+#'   (default), per-arm GLA (global local ancestry) shrinkage is computed
+#'   and applied automatically (see the "Core Algorithm" section of the
+#'   package's \code{CLAUDE.md} for the formula/rationale). When
+#'   \code{FALSE}, GLA shrinkage is skipped entirely and the split
+#'   reproduces the original pre-shrinkage p[k] estimator exactly,
+#'   including its 0.5/0.5 singleton fallback -- equivalent to calling
+#'   \code{\link{split_diploid_multi}} with \code{gla = NULL}. Ignored
+#'   (no effect) when \code{mode = "haplotype"}, which is deterministic
+#'   and has no ambiguous ratio to shrink.
 #' @param verbose Print step-by-step progress messages.
 #'
 #' @return Invisibly, a list with one named numeric matrix (variants x
@@ -777,7 +787,7 @@ read_bed_file <- function(bed, bim, fam) {
 #'
 #' @export
 ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
-                            chrom = NULL, verbose = TRUE) {
+                            chrom = NULL, use_gla = TRUE, verbose = TRUE) {
   mode <- match.arg(mode)
 
   if (verbose) message("=== LANTERN Ancestry Split (Step 1, mode = ", mode, ") ===\n")
@@ -826,11 +836,11 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
   anc_diploid <- matrix(lookup[cbind(as.vector(p0_mat), as.vector(p1_mat))],
                          nrow = n_variants, ncol = length(common_samples))
 
-  # ---- GLA shrinkage target (dosage mode only; haplotype splitting is
-  # deterministic and has no ambiguous ratio to shrink) ----
+  # ---- GLA shrinkage target (dosage mode + use_gla only; haplotype
+  # splitting is deterministic and has no ambiguous ratio to shrink) ----
   gla_combined <- NULL
   arm_id       <- NULL
-  if (mode == "dosage") {
+  if (mode == "dosage" && use_gla) {
     if (verbose) message("\nStep 6b: Computing per-arm global local ancestry (GLA)...")
     anc_hap0_tract <- common$anc_hap0_tract
     anc_hap1_tract <- common$anc_hap1_tract

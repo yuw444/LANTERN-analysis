@@ -9,6 +9,7 @@ ancestry_split(
   msp_path,
   mode = c("dosage", "haplotype"),
   chrom = NULL,
+  use_gla = TRUE,
   verbose = TRUE
 )
 }
@@ -34,6 +35,17 @@ name to use (whichever of \code{chrom}, with, or without a leading
 "chr" matches) -- other chromosomes' genotypes are never read into R.
 If the contig can't be resolved, all variants are queried and filtered
 in R instead (slower, more memory, same result).}
+
+\item{use_gla}{Logical, \code{mode = "dosage"} only. When \code{TRUE}
+(default), per-arm GLA (global local ancestry) shrinkage is computed
+and applied automatically (see the "Core Algorithm" section of the
+package's \code{CLAUDE.md} for the formula/rationale). When
+\code{FALSE}, GLA shrinkage is skipped entirely and the split
+reproduces the original pre-shrinkage p[k] estimator exactly,
+including its 0.5/0.5 singleton fallback -- equivalent to calling
+\code{\link{split_diploid_multi}} with \code{gla = NULL}. Ignored
+(no effect) when \code{mode = "haplotype"}, which is deterministic
+and has no ambiguous ratio to shrink.}
 
 \item{verbose}{Print step-by-step progress messages.}
 }

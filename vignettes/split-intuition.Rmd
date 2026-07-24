@@ -88,8 +88,15 @@ where `denominator = total_alt_alleles − N_MIX_het` (mixed-het samples
 are assigned stochastically via p1/p2 rather than excluded from the
 denominator).
 
-**Singleton edge-case**: when *all* alt alleles are carried by mixed-het
-individuals, p1 = p2 = 0.5 to avoid dividing by zero.
+**Ambiguous-dominated edge-case**: when *all* alt alleles are carried by
+mixed-het individuals (the extreme case), `split_diploid()` alone (no `gla`
+argument, its default) falls back to p1 = p2 = 0.5 to avoid dividing by zero.
+But the more general problem isn't just this all-ambiguous extreme — it's
+any variant where mixed-het carriers *dominate* the observations, even with
+one or two unambiguous carriers still present to compute a (misleadingly
+confident) ratio from. **Part C below explains why that's worth improving
+on, and how**; `ancestry_split()` applies that improvement (GLA shrinkage)
+automatically.
 
 ```{r unphased-edge}
 # A variant where only mixed-het (code 2) samples carry the alt allele
@@ -287,10 +294,13 @@ cat(sprintf("Variant %d  D=%d  p_AFR=%.3f  p_EUR=%.3f  p_NAT=%.3f\n",
 cat("p1+p2+p3 =", p1 + p2 + p3, "\n")
 ```
 
-**Singleton edge case.** When the denominator D = 0 for a given variant
-(all alt alleles are carried exclusively by mixed-ancestry heterozygotes,
-with no pure-ancestry or mixed hom-alt alt alleles), the function falls
-back to a 50/50 split within each affected pair.
+**Ambiguous-dominated edge case.** When the denominator D = 0 for a given
+variant (all alt alleles are carried exclusively by mixed-ancestry
+heterozygotes, with no pure-ancestry or mixed hom-alt alt alleles),
+`split_diploid_multi()` alone (no `gla` argument, its default) falls back to
+a 50/50 split within each affected pair. That's the extreme case, but the
+same unreliability shows up whenever mixed-het carriers dominate the count
+even with D > 0 — Part C revisits both.
 
 ```{r singleton}
 # One sample, one variant: AFR/EUR mixed het, no other data
@@ -410,6 +420,107 @@ mixed_5 <- data.frame(
   pop2 = c("EUR","NAT","EAS","SAS","NAT","EAS","SAS","EAS","SAS","SAS")
 )
 cat("K=5 mixed_codes has", nrow(mixed_5), "rows (expected 5*4/2 =", 5 * 4 / 2, ")\n")
+```
+
+---
+
+# Part C: GLA shrinkage — when ambiguous carriers dominate
+
+Parts A and B each flagged an edge case and deferred it here: the pure
+singleton (D = 0, every alt allele carried by mixed-ancestry heterozygotes)
+is only the extreme end of a broader problem — the raw formula gets
+unreliable well before D actually hits zero, any time ambiguous mixed-het
+carriers *dominate* the count. Take 10 AFR/EUR mixed-het carriers (code 2)
+and just **one** pure-EUR hom-alt carrier (code 1) at the same variant —
+nothing else:
+
+```{r ambiguous-dominant-raw}
+gt_dom  <- matrix(c(rep(1L, 10), 2L), nrow = 1)   # 10 mixed hets + 1 pure EUR hom-alt
+anc_dom <- matrix(c(rep(2L, 10), 1L), nrow = 1)   # code 2 = AFR/EUR, code 1 = EUR
+
+r_raw <- split_diploid_multi(gt_dom, anc_dom, pure_codes, mixed_codes)  # gla=NULL (default)
+cat("Raw split -> AFR total:", sum(r_raw$AFR),
+    " EUR total:", sum(r_raw$EUR), " NAT total:", sum(r_raw$NAT), "\n")
+```
+
+D > 0 here, so this isn't the singleton branch — the raw formula happily
+computes p_AFR = 0, p_EUR = 1 from that one unambiguous carrier, and
+confidently assigns **all ten** ambiguous carriers' alt alleles to EUR. That's
+not a "no answer, guess 50/50" problem; it's a *confidently wrong-looking*
+answer extrapolated from a single data point. Nothing in the raw formula
+distinguishes "1 unambiguous carrier informing 2 total alt alleles" from "1
+unambiguous carrier informing 100" — it takes whatever ratio it computes at
+face value, regardless of how little evidence backs it.
+
+**GLA (global local ancestry) shrinkage** fixes both this case and the pure
+singleton with one mechanism: discount the raw ratio in proportion to how
+much of a variant's evidence is actually ambiguous, and fill in the rest
+from the chromosome arm's independently-estimated ancestry mixture:
+
+$$w = \frac{\text{ambiguous carriers}}{\text{all alt-carriers at this variant}}, \qquad
+p_k = (1-w)\,p_k^{\text{raw}} + w \cdot \text{GLA}_k[\text{arm}]$$
+
+`w = 0` (unambiguous carriers dominate) reduces to exactly the raw formula
+from Parts A/B. `w = 1` (the pure singleton) falls back entirely to the arm's
+GLA proportion — not a coin flip; that's just one end of this continuum, not
+a separate mechanism. `GLA_k[arm]` itself is computed once per chromosome arm
+(split at the centromere) directly from the MSP ancestry **tracts**, not from
+genotypes or phase, so it stays well-estimated regardless of how rare any
+individual variant is.
+
+`split_diploid()`/`split_diploid_multi()` accept this as an optional `gla`
+(proportions) + `arm_id` (which row of `gla` each variant uses) argument
+pair; leaving them at their default `NULL` reproduces Parts A/B exactly, as
+seen above. Revisiting the example above with a `gla` argument supplied —
+say, this arm's cohort is mostly AFR/EUR admixed with little NAT ancestry:
+
+```{r gla-ambiguous-dominant}
+# This arm's actual ancestry mixture (from MSP tracts, not this variant)
+gla_arm <- matrix(c(0.70, 0.25, 0.05), nrow = 1,
+                   dimnames = list("p", c("AFR", "EUR", "NAT")))
+
+r_gla <- split_diploid_multi(gt_dom, anc_dom, pure_codes, mixed_codes,
+                              gla = gla_arm, arm_id = 0L)
+
+cat("Without GLA -> AFR total:", sum(r_raw$AFR),
+    " EUR total:", sum(r_raw$EUR), " NAT total:", sum(r_raw$NAT), "\n")
+cat("With GLA    -> AFR total:", round(sum(r_gla$AFR), 2),
+    " EUR total:", round(sum(r_gla$EUR), 2),
+    " NAT total:", round(sum(r_gla$NAT), 2), "\n")
+```
+
+Here `w = 10/11 ≈ 0.91` — the near-total ambiguity is almost fully
+discounted, and the ten mixed-het carriers now split roughly 2:1 toward AFR
+(matching the arm's 0.70/0.25 mixture) instead of being handed to EUR
+outright. Same ten carriers, same one pure-EUR data point — but the
+GLA-informed split reflects what's actually known about *this arm, this
+cohort*, instead of extrapolating from one sample. The pure singleton from
+B.1 is the same mechanism at its extreme (`w = 1`, no unambiguous carriers at
+all):
+
+```{r gla-singleton}
+gt_s  <- matrix(1L, nrow = 1, ncol = 1)
+anc_s <- matrix(2L, nrow = 1, ncol = 1)   # code 2 = AFR/EUR
+
+r_flat <- split_diploid_multi(gt_s, anc_s, pure_codes, mixed_codes)                      # gla=NULL (default)
+r_gla_s <- split_diploid_multi(gt_s, anc_s, pure_codes, mixed_codes,
+                                gla = gla_arm, arm_id = 0L)
+
+cat("Without GLA (flat fallback) -> AFR:", r_flat$AFR[1,1],
+    " EUR:", r_flat$EUR[1,1], " NAT:", r_flat$NAT[1,1], "\n")
+cat("With GLA (this arm's ancestry) -> AFR:", round(r_gla_s$AFR[1,1], 3),
+    " EUR:", round(r_gla_s$EUR[1,1], 3), " NAT:", round(r_gla_s$NAT[1,1], 3), "\n")
+```
+
+In practice you won't build `gla`/`arm_id` by hand — `ancestry_split(mode =
+"dosage")` computes both automatically from the MSP file's tracts and
+applies them for you. Pass `use_gla = FALSE` to turn shrinkage off and get
+the flat Parts A/B behavior instead, e.g. for comparing against the
+original estimator:
+
+```r
+split_gla  <- ancestry_split(vcf_path, msp_path, mode = "dosage")                    # use_gla=TRUE (default)
+split_flat <- ancestry_split(vcf_path, msp_path, mode = "dosage", use_gla = FALSE)
 ```
 
 See `?split_diploid_multi` and `?split_haplotype_multi` for full argument

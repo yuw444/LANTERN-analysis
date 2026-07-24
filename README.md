@@ -314,10 +314,65 @@ Where N1-N8 are counts per variant, over PT and GT matrix entries for the same s
 
 #### Special Cases
 
-- **Singleton**: When all alt alleles come from mixed het individuals (N5 = sum(gt)),
-  p1 = p2 = 0.5
 - **Homozygous alt (gt=2)**: 1 allele to each ancestry regardless of pt
 - **Pure ancestry (pt=1 or pt=3)**: All alt alleles to that ancestry
+- **N5 dominates**: When ambiguous mixed-ancestry heterozygotes (N5) make up
+  most or all of a variant's carriers — up to and including the singleton
+  case, N5 = every carrier, where the formula is literally undefined
+  (denominator = 0) — the raw p1/p2 ratio becomes unreliable. `ancestry_split()`
+  applies **GLA shrinkage** by default to fix this; see below.
+
+#### GLA shrinkage: why an ambiguous-dominated variant needs outside evidence
+
+The raw formula estimates a variant's ancestry split from its own
+unambiguous carriers, then applies that ratio to the ambiguous ones. That
+works fine when unambiguous carriers are plentiful — but consider N5 = 10
+(ten ambiguous mixed-ancestry heterozygotes) with everything else zero
+except N7 = 1 (one pure-European homozygous-alt carrier):
+
+```
+total_alt   = 2*N1 + N2 + 2*N4 + N5 + 2*N7 + N8 = 2*0+0+2*0+10+2*1+0 = 12
+denominator = total_alt - N5                    = 12 - 10             = 2
+p1 = (2*N1 + N2 + N4) / denominator = (0+0+0) / 2 = 0
+p2 = (N4 + 2*N7 + N8) / denominator = (0+2+0) / 2 = 1
+```
+
+The formula confidently assigns **all ten** ambiguous carriers 100% European
+ancestry (p1=0, p2=1), extrapolated from a single unambiguous data point.
+Unlike the pure singleton, this isn't a "no answer" case — the denominator is
+nonzero, so nothing flags it as unreliable. It's a *confidently
+wrong-looking* answer: the raw formula can't distinguish "1 unambiguous
+carrier informing 2 total alt alleles" from "1 unambiguous carrier informing
+100 total" — it takes whatever ratio it computes at face value, regardless of
+how little evidence backs it.
+
+**GLA (global local ancestry) shrinkage** fixes this — and the pure
+singleton — with one mechanism: discount the raw ratio in proportion to how
+much of a variant's evidence is actually ambiguous, and fill in the rest from
+the chromosome arm's independently-estimated ancestry mixture (from RFMix's
+tracts, not this variant's genotypes):
+
+```
+w  = N5 / (N1 + N2 + N4 + N5 + N7 + N8)   # fraction of carriers that are ambiguous
+p1 = (1 - w) * p1_raw + w * GLA_AFR[arm]
+```
+
+For the example above, `w = 10/11 ≈ 0.91` — the near-total ambiguity is
+almost fully discounted. If this cohort's arm-level ancestry runs 60% AFR /
+40% EUR, GLA shrinkage gives `p1 ≈ 0.55, p2 ≈ 0.45` instead of the raw
+formula's `p1=0, p2=1` — a moderate, defensible estimate instead of a hard
+call backed by one data point. `w = 0` (unambiguous carriers dominate) leaves
+the raw formula untouched; `w = 1` (the pure singleton) falls back entirely
+to the arm's GLA proportion instead of a coin flip — the old special case is
+just one end of this same continuum, not a separate mechanism.
+
+`ancestry_split(mode = "dosage")` computes and applies this automatically.
+Pass `use_gla = FALSE` to disable it and reproduce the original raw-ratio /
+flat-0.5-singleton estimator exactly (or call
+`split_diploid()`/`split_diploid_multi()` directly with `gla = NULL`, the
+default, for the same effect at the matrix level). See
+`vignette("split-intuition")` for a worked example and the K > 2
+generalisation.
 
 #### Intuition for K > 2 populations (`split_diploid_multi`)
 
@@ -338,7 +393,9 @@ generalises p1/p2 to K populations in two passes per variant:
    using the conditional ratio `w_i / (w_i + w_j)` — i.e. in proportion to how
    often each population's allele shows up unambiguously elsewhere at this
    variant. If neither population has unambiguous evidence at this variant
-   (`w_i + w_j == 0`, the singleton case), the split defaults to 0.5 / 0.5.
+   (`w_i + w_j == 0`, the singleton case), GLA shrinkage (see above) supplies
+   the arm's conditional ancestry ratio for that pair instead of a flat
+   0.5/0.5 — same idea as the two-population case, generalised per pair.
 
 With K=2 there's only one mixed code and one pair, so this reduces exactly to
 the p1/p2 formulas above.

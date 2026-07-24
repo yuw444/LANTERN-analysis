@@ -518,6 +518,67 @@ test_that("ancestry_split K=3 dosage mode: GLA shrinkage differs by arm, singlet
   expect_equal(unname(result$ancestry_counts[2, "AFR"]), 4)
 })
 
+test_that("ancestry_split(use_gla = FALSE) reproduces the pre-shrinkage estimator on the same MSP+VCF fixture", {
+  # Identical fixture to the test above; use_gla=FALSE should reproduce the
+  # ORIGINAL (pre-shrinkage) p[k] estimator exactly -- V1/V2 (q-arm, where
+  # GLA and flat-0.5 genuinely disagree) now differ from that test's GLA
+  # values, while V3 (symmetric p-arm, GLA happens to equal 0.5 there too)
+  # stays numerically identical either way.
+  td <- tempfile()
+  dir.create(td, recursive = TRUE)
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+
+  samples <- paste0("S", 1:6)
+  hdr_samples <- paste(vapply(samples, function(s) paste0(s, c(".0", ".1")), character(2)), collapse = "\t")
+
+  msp <- tempfile(fileext = ".tsv.gz", tmpdir = td)
+  con <- gzfile(msp, "wt")
+  writeLines(c(
+    "#Subpopulation order/codes:\tAFR=0\tEUR=1\tNAT=2",
+    paste0("#chm\tspos\tepos\tsgpos\tegpos\tn snps\t", hdr_samples)
+  ), con)
+  writeLines(c(
+    "chr19\t100\t1000\t0.1\t0.2\t10\t0\t0\t1\t1\t2\t2\t0\t1\t0\t2\t1\t2",
+    "chr19\t30000000\t30001000\t30.0\t30.1\t10\t0\t0\t0\t0\t0\t0\t0\t1\t0\t2\t0\t0"
+  ), con)
+  close(con)
+
+  gt_line <- function(pos, gts) paste(c("chr19", pos, ".", "A", "T", ".", "PASS", ".", "GT", gts), collapse = "\t")
+  vcf <- tempfile(fileext = ".vcf", tmpdir = td)
+  writeLines(c(
+    "##fileformat=VCFv4.2",
+    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+    paste(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", samples), collapse = "\t"),
+    gt_line(150,      c("0|0", "0|0", "0|0", "0|0", "0|0", "0|0")),
+    gt_line(200,      c("0|0", "0|0", "0|0", "0|0", "0|1", "0|0")),
+    gt_line(30000100, c("0|1", "1|1", "0|0", "0|1", "0|0", "0|0")),
+    gt_line(30000200, c("0|0", "0|0", "0|0", "0|1", "0|0", "0|0")),
+    gt_line(99999999, c("0|1", "0|0", "0|0", "0|0", "0|0", "0|0"))
+  ), vcf)
+
+  result <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
+                            use_gla = FALSE, verbose = FALSE)
+
+  expect_equal(nrow(result$variant_info), 3)
+  s4_idx <- match("S4", result$sample_ids)
+  s5_idx <- match("S5", result$sample_ids)
+
+  # V3 (p-arm singleton AFR/NAT): flat fallback, same numeric value as the
+  # GLA-enabled test (that arm's GLA happened to be exactly 0.5 too)
+  expect_equal(result$AFR[1, s5_idx], 0.5, tolerance = 1e-9)
+  expect_equal(result$NAT[1, s5_idx], 0.5, tolerance = 1e-9)
+
+  # V1 (q-arm non-singleton AFR/EUR): raw ratio only, NOT blended toward GLA
+  # -> 1.0/0.0, not the 32/33 / 1/33 seen with use_gla=TRUE
+  expect_equal(result$AFR[2, s4_idx], 1.0, tolerance = 1e-9)
+  expect_equal(result$EUR[2, s4_idx], 0.0, tolerance = 1e-9)
+
+  # V2 (q-arm singleton AFR/EUR): flat 0.5/0.5 fallback, NOT the GLA-derived
+  # 10/11 / 1/11 seen with use_gla=TRUE
+  expect_equal(result$AFR[3, s4_idx], 0.5, tolerance = 1e-9)
+  expect_equal(result$EUR[3, s4_idx], 0.5, tolerance = 1e-9)
+})
+
 test_that("ancestry_split K=3 haplotype mode deterministically splits via full MSP+VCF pipeline", {
   # Same p-arm tract as the dosage-mode test above (symmetric K=3 design),
   # but haplotype (phased) mode is fully deterministic -- no p[k] estimation
