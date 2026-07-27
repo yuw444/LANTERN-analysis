@@ -1,11 +1,11 @@
-# LANTERN <img src="man/figures/logo.png" align="left" height="210" alt="LANTERN logo" />
+# LANTERN 
 
 **L**everaging Local **AN**cestry **T**racts to **E**nhance **R**are-Varia**N**t Aggregate Association Testing
 
 [![pkgdown site](https://img.shields.io/badge/docs-pkgdown-blue)](https://yuw444.github.io/LANTERN/)
 [![GitHub](https://img.shields.io/badge/source-GitHub-lightgrey)](https://github.com/yuw444/LANTERN)
 
-Full documentation, vignettes, and function reference: **<https://yuw444.github.io/LANTERN/>**. MedRxiv: [2026.04. 24.26351693](https://www.medrxiv.org/content/10.64898/2026.04.24.26351693v1.full.pdf)
+Full documentation, vignettes, and function reference: **[https://yuw444.github.io/LANTERN/](https://yuw444.github.io/LANTERN/)**. MedRxiv: [2026.04. 24.26351693](https://www.medrxiv.org/content/10.64898/2026.04.24.26351693v1.full.pdf)
 
 ## Features
 
@@ -19,8 +19,8 @@ Full documentation, vignettes, and function reference: **<https://yuw444.github.
 
 ## Installation
 
-SeqArray and SeqVarTools are Bioconductor packages and are not found by
-`devtools::install_github()` automatically. Use BiocManager to handle all
+SeqArray is a Bioconductor package and is not found by
+`devtools::install_github()` automatically. Use BiocManager to handle
 dependencies in one step:
 
 ```r
@@ -30,10 +30,10 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 BiocManager::install("yuw444/LANTERN/lantern")
 ```
 
-Or pre-install the Bioconductor packages first, then use devtools:
+Or pre-install the Bioconductor dependency first, then use devtools:
 
 ```r
-BiocManager::install(c("SeqArray", "SeqVarTools"))
+BiocManager::install("SeqArray")
 devtools::install_github("yuw444/LANTERN", subdir = "lantern")
 ```
 
@@ -111,10 +111,10 @@ result <- ancestry_split_phased(
 #### PT (Parent-of-Origin) Matrix
 
 | sample_id | chr1:1000-2000 | chr1:2000-3000 | chr2:5000-6000 |
-|-----------|:--------------:|:--------------:|:--------------:|
-| S1        | 3              | 2              | 3              |
-| S2        | 2              | 2              | 3              |
-| S3        | 1              | 1              | 2              |
+| --------- | :------------: | :------------: | :------------: |
+| S1        |       3       |       2       |       3       |
+| S2        |       2       |       2       |       3       |
+| S3        |       1       |       1       |       2       |
 
 - **Rows**: Samples (must have sample_id column or rownames)
 - **Columns**: Genomic regions/windows
@@ -125,10 +125,10 @@ result <- ancestry_split_phased(
 
 #### GT (Genotype) Matrix
 
-|            | S1 | S2 | S3 |
-|------------|:--:|:--:|:--:|
-| chr1:1234  | 0  | 2  | 0  |
-| chr1:2345  | 1  | 1  | 0  |
+|           | S1 | S2 | S3 |
+| --------- | :-: | :-: | :-: |
+| chr1:1234 | 0 | 2 | 0 |
+| chr1:2345 | 1 | 1 | 0 |
 
 - **Rows**: Variants
 - **Columns**: Samples (must match PT matrix columns)
@@ -162,12 +162,12 @@ rfmix -f query.phased.vcf.gz \
 This writes several sibling files sharing the `LANTERN_chr19` prefix; LANTERN
 only reads the `.msp.tsv.gz`:
 
-| File | Content | Used by LANTERN? |
-|---|---|---|
-| `*.msp.tsv.gz` | Viterbi (most-likely) local-ancestry call per haplotype per tract | **Yes** — `.parse_msp()` / `ancestry_split_phased()` / `ancestry_split_combined()` |
-| `*.fb.tsv.gz` | Forward-backward posterior probability per population per haplotype per marker | No |
-| `*.rfmix.Q.gz` | Global (genome-wide) ancestry proportion per sample, ADMIXTURE-style `.Q` format | No |
-| `*.sis.tsv.gz` | Per-SNP interpolated ancestry probability | No |
+| File             | Content                                                                           | Used by LANTERN?                                                                                |
+| ---------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `*.msp.tsv.gz` | Viterbi (most-likely) local-ancestry call per haplotype per tract                 | **Yes** — `.parse_msp()` / `ancestry_split_phased()` / `ancestry_split_combined()` |
+| `*.fb.tsv.gz`  | Forward-backward posterior probability per population per haplotype per marker    | No                                                                                              |
+| `*.rfmix.Q.gz` | Global (genome-wide) ancestry proportion per sample, ADMIXTURE-style`.Q` format | No                                                                                              |
+| `*.sis.tsv.gz` | Per-SNP interpolated ancestry probability                                         | No                                                                                              |
 
 ##### MSP file structure
 
@@ -213,6 +213,7 @@ matrices (examples below use the dosage split; `ancestry_split_phased()` and
 between the VCF and MSP file automatically):
 
 ### Sample Mismatches
+
 ```r
 # GT has samples A, B, C
 # PT has samples A, B, D
@@ -229,6 +230,7 @@ result <- ancestry_split_dosage(gt, pt)
 ```
 
 ### Variant/Region Mismatches
+
 ```r
 # GT variants: chr22:100, chr22:200, chr22:300
 # PT regions: chr22:50-150, chr22:150-250
@@ -251,34 +253,34 @@ result <- ancestry_split_dosage(gt, pt)
 
 Parse VCF/MSP files (or accept pre-built matrices) and run a full ancestry split.
 
-| Function | Description |
-|----------|-------------|
-| `ancestry_split_dosage(gt, pt, ...)` | Full pipeline: proportional dosage split of a genotype matrix by parent-of-origin ancestry, with automatic sample/variant overlap handling. Accepts matrices directly, or a `vcf_path`/`msp_path` shortcut. |
-| `ancestry_split_phased(vcf_path, msp_path, out_path, ...)` | Full pipeline for phased data: parse a phased VCF + RFMix MSP file, deterministically split each haplotype by its local ancestry tract, and optionally write ancestry-specific VCFs/GDS. |
-| `ancestry_split_combined(vcf_path, msp_path, ...)` | Parses the VCF/BCF + MSP file once and runs both the phased and proportional splits together, for any number of populations K ≥ 2. |
+| Function                                                     | Description                                                                                                                                                                                                    |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ancestry_split_dosage(gt, pt, ...)`                       | Full pipeline: proportional dosage split of a genotype matrix by parent-of-origin ancestry, with automatic sample/variant overlap handling. Accepts matrices directly, or a`vcf_path`/`msp_path` shortcut. |
+| `ancestry_split_phased(vcf_path, msp_path, out_path, ...)` | Full pipeline for phased data: parse a phased VCF + RFMix MSP file, deterministically split each haplotype by its local ancestry tract, and optionally write ancestry-specific VCFs/GDS.                       |
+| `ancestry_split_combined(vcf_path, msp_path, ...)`         | Parses the VCF/BCF + MSP file once and runs both the phased and proportional splits together, for any number of populations K ≥ 2.                                                                            |
 
 ### Low-level splitters
 
 Matrix-in, matrix-out primitives (C backend), used internally by the pipelines above but also usable directly.
 
-| Function | Description |
-|----------|-------------|
-| `split_diploid(gt, ancestry)` | Split a genotype matrix into African/European dosage matrices using parent-of-origin ancestry codes (2-population, proportional). |
-| `split_diploid_multi(gt, ancestry, pure_codes, mixed_codes)` | K-population generalisation of `split_diploid`. |
-| `split_haplotype(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)` | Deterministic per-haplotype ancestry split (2-population) from phased genotype + ancestry-tract matrices. |
-| `split_haplotype_multi(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)` | K-population generalisation of `split_haplotype`. |
+| Function                                                                   | Description                                                                                                                       |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `split_diploid(gt, ancestry)`                                            | Split a genotype matrix into African/European dosage matrices using parent-of-origin ancestry codes (2-population, proportional). |
+| `split_diploid_multi(gt, ancestry, pure_codes, mixed_codes)`             | K-population generalisation of`split_diploid`.                                                                                  |
+| `split_haplotype(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)`       | Deterministic per-haplotype ancestry split (2-population) from phased genotype + ancestry-tract matrices.                         |
+| `split_haplotype_multi(gt_hap0, gt_hap1, anc_hap0, anc_hap1, pop_codes)` | K-population generalisation of`split_haplotype`.                                                                                |
 
 ### I/O and utilities
 
-| Function | Description |
-|----------|-------------|
-| `count_ancestry_codes(mat, code)` | Count occurrences of an ancestry code in each row of a PT matrix. |
-| `write_dosage_gds(dosage_mat, variant_info, sample_ids, gds_path)` | Convert an ancestry-specific dosage matrix to a SeqArray GDS file (for `GMMAT::SMMAT()`). |
+| Function                                                             | Description                                                                                |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `count_ancestry_codes(mat, code)`                                  | Count occurrences of an ancestry code in each row of a PT matrix.                          |
+| `write_dosage_gds(dosage_mat, variant_info, sample_ids, gds_path)` | Convert an ancestry-specific dosage matrix to a SeqArray GDS file (for`GMMAT::SMMAT()`). |
 
 ### Statistics
 
-| Function | Description |
-|----------|-------------|
+| Function                                     | Description                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `cauchy_combine(p_values, weights = NULL)` | Cauchy combination test — merges K (possibly correlated) p-values into a single meta-analysis p-value. |
 
 ## Splitting Algorithms
@@ -303,14 +305,14 @@ p2 = (N4 + 2*N7 + N8) / (2*N1 + N2 + 2*N4 + 2*N7 + N8)
 
 Where N1-N8 are counts per variant, over PT and GT matrix entries for the same sample:
 
-| Code | PT, GT | Description |
-|------|--------|-------------|
-| N1 | pt=3, gt=2 | Pure African, homozygous alt |
-| N2 | pt=3, gt=1 | Pure African, heterozygous |
-| N4 | pt=2, gt=2 | Mixed, homozygous alt |
-| N5 | pt=2, gt=1 | Mixed, heterozygous |
-| N7 | pt=1, gt=2 | Pure European, homozygous alt |
-| N8 | pt=1, gt=1 | Pure European, heterozygous |
+| Code | PT, GT     | Description                   |
+| ---- | ---------- | ----------------------------- |
+| N1   | pt=3, gt=2 | Pure African, homozygous alt  |
+| N2   | pt=3, gt=1 | Pure African, heterozygous    |
+| N4   | pt=2, gt=2 | Mixed, homozygous alt         |
+| N5   | pt=2, gt=1 | Mixed, heterozygous           |
+| N7   | pt=1, gt=2 | Pure European, homozygous alt |
+| N8   | pt=1, gt=1 | Pure European, heterozygous   |
 
 #### Special Cases
 
@@ -427,26 +429,62 @@ instead of 2. There's no proportional step to generalise, because the whole
 reason the dosage split needs proportions (unresolved parental origin within
 a genotype) doesn't exist once haplotypes are individually ancestry-labeled.
 
+## Association Testing
+
+`ancestry_smmat()` (Step 3) runs `GMMAT::SMMAT()` once per population's GDS
+file (plus, typically, once more on the unsplit "observed" GT GDS), then
+combines the per-population p-values into a single gene-level result with
+`cauchy_combine()`.
+
+### Why per-population p-values aren't combined equally
+
+Not every population contributes equally reliable evidence for every gene.
+A gene sitting in a genomic region where only a handful of cohort samples
+have *pure* ancestry $k$ gives that population's SMMAT p-value little to
+work with, and shouldn't count as much as a population with abundant
+pure-ancestry representation there. So instead of feeding `cauchy_combine()`
+equal weights, `ancestry_smmat()` weights each population's p-value by how
+much pure-ancestry evidence backs it *at that specific gene*:
+
+```
+w_k(gene) = median over the gene's variants of:
+              (count of cohort samples with pure ancestry k at that variant)
+```
+
+using the **median** across the gene's variants — from `ancestry_split()`'s
+`ancestry_counts` output — rather than, say, the mean, so a handful of
+unusually ancestry-rich or ancestry-poor variants at the gene's edges don't
+dominate the estimate. A population with little pure-ancestry
+representation at this gene is discounted, not ignored outright — a gene
+well-represented in one ancestry but barely in another naturally leans
+toward the better-supported population's signal in the combined p-value.
+If none of the populations' names match `ancestry_counts`'s columns (e.g. it
+wasn't supplied), `ancestry_smmat()` falls back to equal weighting across
+all K populations instead.
+
+This weight computation happens automatically inside `ancestry_smmat()` —
+there's no separate weight-finding step to run. See `?ancestry_smmat` for
+the full argument/return-value reference.
+
 ## Dependencies
 
 ### R packages
 
-| Package | Type | Source | Notes |
-|---------|------|--------|-------|
-| [data.table](https://cran.r-project.org/package=data.table) | Required | CRAN | — |
-| [SeqArray](https://bioconductor.org/packages/SeqArray/) | Required | Bioconductor | GDS file I/O |
-| [SeqVarTools](https://bioconductor.org/packages/SeqVarTools/) | Required | Bioconductor | Variant iteration |
-| [GMMAT](https://cran.r-project.org/package=GMMAT) | Suggested | CRAN | SMMAT gene-level tests |
-| [dplyr](https://cran.r-project.org/package=dplyr) | Suggested | CRAN | Vignettes only |
+| Package                                                      | Type      | Source       | Notes                  |
+| ------------------------------------------------------------ | --------- | ------------ | ---------------------- |
+| [data.table](https://cran.r-project.org/package=data.table)   | Required  | CRAN         | —                     |
+| [SeqArray](https://bioconductor.org/packages/SeqArray/)       | Required  | Bioconductor | GDS file I/O           |
+| [GMMAT](https://cran.r-project.org/package=GMMAT)             | Suggested | CRAN         | SMMAT gene-level tests |
+| [dplyr](https://cran.r-project.org/package=dplyr)             | Suggested | CRAN         | Vignettes only         |
 
-**Bioconductor packages are not installed automatically by `devtools::install_github()`.**
+**Bioconductor packages (SeqArray) are not installed automatically by `devtools::install_github()`.**
 Use the `BiocManager` installation instructions above.
 
 ### System tools
 
-| Tool | Version | Required for |
-|------|---------|-------------|
-| [`bcftools`](https://samtools.github.io/bcftools/) | ≥ 1.10 | Phased-mode functions only (`read_phased_vcf`, `ancestry_split_phased`, `filter_phased_vcf_samples`) |
+| Tool                                                | Version | Required for                                                                                               |
+| --------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| [`bcftools`](https://samtools.github.io/bcftools/) | ≥ 1.10 | VCF/BCF-reading functions only (`ancestry_split()`, `ancestry_split_phased()`) — not needed for the matrix-in/matrix-out functions (`split_diploid()`, `ancestry_split_dosage()`, etc.) |
 
 Install bcftools via your system package manager:
 
