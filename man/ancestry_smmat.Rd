@@ -42,13 +42,20 @@ with row/column names equal to sample IDs.}
 
 \item{gene_group_file}{Either a path to the gene_group file passed to
 \code{GMMAT::SMMAT()} (no header; columns gene, chr, pos, ref, alt,
-weight), or a data.frame/matrix with those same six columns (written to
-a temporary file internally). Either way, the file is deleted with
-\code{unlink()} when \code{ancestry_smmat()} returns — no
-\code{tempfile()}/\code{write.table()}/\code{unlink()} needed by the
-caller, but a \emph{path you want to keep must not be passed here}; pass
-a fresh copy (or the data.frame) each time, including across repeated
-calls with the same gene set (e.g. one call per phenotype).}
+weight), or a data.frame/matrix with those same six columns. Either way,
+it is read, has any leading \code{"chr"} stripped from the chr column
+(matching \code{SeqArray::seqVCF2GDS()}'s convention — see the "chr
+column" note below), and written to a fresh temporary file that is
+deleted with \code{unlink()} when \code{ancestry_smmat()} returns; the
+caller's own path/data.frame is never read-modified or deleted, and can
+safely be reused across repeated calls (e.g. one call per phenotype).
+\strong{chr column}: pass either \code{"19"} or \code{"chr19"} —
+normalized automatically. Without this, a mismatch between the group
+file's chr convention and the GDS's (always bare, no \code{"chr"}
+prefix) would silently drop every affected variant, and the whole gene
+if all its variants are affected, since \code{GMMAT::SMMAT()} matches
+variants by exact \code{chr:pos:ref:alt} string equality with no
+fuzzy/positional alignment.}
 
 \item{ancestry_counts, variant_info}{Optional: pass
 \code{ancestry_split()$ancestry_counts} / \code{$variant_info}

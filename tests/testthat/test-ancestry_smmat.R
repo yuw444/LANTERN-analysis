@@ -105,7 +105,7 @@ test_that("ancestry_smmat() runs SMMAT per population and Cauchy-combines p-valu
   expect_true("E.pval" %in% names(smmat_results$AFR))
 })
 
-test_that("ancestry_smmat() still accepts gene_group_file as a plain file path", {
+test_that("ancestry_smmat() accepts gene_group_file as a plain file path and never deletes it", {
   skip_if_not_installed("GMMAT")
   skip_if_not_installed("SeqArray")
 
@@ -127,10 +127,12 @@ test_that("ancestry_smmat() still accepts gene_group_file as a plain file path",
     out_dir, verbose = FALSE)
 
   gg_file <- tempfile(fileext = ".tsv")
+  on.exit(unlink(gg_file), add = TRUE)
   write.table(data.frame(gene = "GENEY", chr = "2", pos = variant_info$pos,
                           ref = "A", alt = "T", weight = 1),
               gg_file, sep = "\t", row.names = FALSE, col.names = FALSE,
               quote = FALSE)
+  gg_file_before <- tools::md5sum(gg_file)
 
   pheno <- data.frame(id = ids, y = rnorm(n), stringsAsFactors = FALSE)
   kinship <- diag(n)
@@ -139,8 +141,50 @@ test_that("ancestry_smmat() still accepts gene_group_file as a plain file path",
   out <- suppressWarnings(ancestry_smmat(gds_paths, pheno, y ~ 1, kinship, gg_file,
                                           verbose = FALSE))
 
-  expect_false(file.exists(gg_file))  # ancestry_smmat() unlinks it, even a caller-supplied path
+  # ancestry_smmat() now always works from an internal temp copy -- the
+  # caller-supplied path is left untouched, unlike the old behavior where
+  # it was unconditionally unlink()ed.
+  expect_true(file.exists(gg_file))
+  expect_identical(tools::md5sum(gg_file), gg_file_before)
   expect_equal(out$results$gene, "GENEY")
+})
+
+test_that("ancestry_smmat() normalizes a 'chr'-prefixed gene_group_file chr column", {
+  skip_if_not_installed("GMMAT")
+  skip_if_not_installed("SeqArray")
+
+  set.seed(11)
+  n     <- 20
+  ids   <- paste0("S", seq_len(n))
+  n_var <- 3
+
+  pop_mat <- matrix(rbinom(n_var * n, 2, 0.2), nrow = n_var, ncol = n,
+                     dimnames = list(NULL, ids))
+  variant_info <- data.frame(chrom = rep("chr2", n_var),
+                              pos = seq(50L, by = 50L, length.out = n_var),
+                              ref = "A", alt = "T", stringsAsFactors = FALSE)
+
+  out_dir <- tempfile()
+  on.exit(unlink(out_dir, recursive = TRUE), add = TRUE)
+  gds_paths <- write_ancestry_gds(
+    list(POP1 = pop_mat, variant_info = variant_info, sample_ids = ids),
+    out_dir, verbose = FALSE)
+
+  # SeqArray always strips "chr" when writing the GDS (chromosome field is
+  # bare "2"), so a gene_group_file using "chr2" instead of "2" used to
+  # match zero variants -- GENEY would be silently absent from the output.
+  gg <- data.frame(gene = "GENEY", chr = "chr2", pos = variant_info$pos,
+                   ref = "A", alt = "T", weight = 1)
+
+  pheno <- data.frame(id = ids, y = rnorm(n), stringsAsFactors = FALSE)
+  kinship <- diag(n)
+  rownames(kinship) <- colnames(kinship) <- ids
+
+  out <- suppressWarnings(ancestry_smmat(gds_paths, pheno, y ~ 1, kinship, gg,
+                                          verbose = FALSE))
+
+  expect_equal(out$results$gene, "GENEY")
+  expect_equal(out$smmat_results$POP1$n.variants, n_var)
 })
 
 test_that("ancestry_smmat() falls back to equal weights when ancestry_counts is omitted", {

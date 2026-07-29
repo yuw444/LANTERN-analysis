@@ -83,13 +83,20 @@
 #'   with row/column names equal to sample IDs.
 #' @param gene_group_file Either a path to the gene_group file passed to
 #'   \code{GMMAT::SMMAT()} (no header; columns gene, chr, pos, ref, alt,
-#'   weight), or a data.frame/matrix with those same six columns (written to
-#'   a temporary file internally). Either way, the file is deleted with
-#'   \code{unlink()} when \code{ancestry_smmat()} returns — no
-#'   \code{tempfile()}/\code{write.table()}/\code{unlink()} needed by the
-#'   caller, but a \emph{path you want to keep must not be passed here}; pass
-#'   a fresh copy (or the data.frame) each time, including across repeated
-#'   calls with the same gene set (e.g. one call per phenotype).
+#'   weight), or a data.frame/matrix with those same six columns. Either way,
+#'   it is read, has any leading \code{"chr"} stripped from the chr column
+#'   (matching \code{SeqArray::seqVCF2GDS()}'s convention — see the "chr
+#'   column" note below), and written to a fresh temporary file that is
+#'   deleted with \code{unlink()} when \code{ancestry_smmat()} returns; the
+#'   caller's own path/data.frame is never read-modified or deleted, and can
+#'   safely be reused across repeated calls (e.g. one call per phenotype).
+#'   \strong{chr column}: pass either \code{"19"} or \code{"chr19"} —
+#'   normalized automatically. Without this, a mismatch between the group
+#'   file's chr convention and the GDS's (always bare, no \code{"chr"}
+#'   prefix) would silently drop every affected variant, and the whole gene
+#'   if all its variants are affected, since \code{GMMAT::SMMAT()} matches
+#'   variants by exact \code{chr:pos:ref:alt} string equality with no
+#'   fuzzy/positional alignment.
 #' @param ancestry_counts,variant_info Optional: pass
 #'   \code{ancestry_split()$ancestry_counts} / \code{$variant_info}
 #'   straight through to compute per-gene ancestry weights for the Cauchy
@@ -162,18 +169,34 @@ ancestry_smmat <- function(gds_paths, pheno, formula, kinship, gene_group_file,
     stop("Package 'GMMAT' is required for ancestry_smmat(). Install with: ",
          "install.packages('GMMAT') (not available via conda/Bioconductor).")
 
-  if (!is.character(gene_group_file)) {
-    if (!is.data.frame(gene_group_file) && !is.matrix(gene_group_file))
-      stop("gene_group_file must be a file path (character) or a ",
-           "data.frame/matrix with columns gene, chr, pos, ref, alt, weight")
-    gg_tmp <- tempfile(fileext = ".tsv")
-    utils::write.table(gene_group_file, gg_tmp, sep = "\t", row.names = FALSE,
-                        col.names = FALSE, quote = FALSE)
-    gene_group_file <- gg_tmp
+  if (is.character(gene_group_file)) {
+    if (!file.exists(gene_group_file))
+      stop("gene_group_file not found: ", gene_group_file)
+    gg_df <- data.table::fread(gene_group_file, header = FALSE)
+  } else if (is.data.frame(gene_group_file) || is.matrix(gene_group_file)) {
+    gg_df <- as.data.frame(gene_group_file)
+  } else {
+    stop("gene_group_file must be a file path (character) or a ",
+         "data.frame/matrix with columns gene, chr, pos, ref, alt, weight")
   }
-  # gene_group_file is unlinked when this call returns, whether it was
-  # supplied as a path or written internally from a data.frame/matrix above.
-  on.exit(unlink(gene_group_file), add = TRUE)
+  if (ncol(gg_df) != 6)
+    stop("gene_group_file must have exactly 6 columns: gene, chr, pos, ref, alt, weight")
+  # Strip a leading "chr" from the chr column (2nd column) into a fresh
+  # temp copy -- never the caller's own path/data.frame. SeqArray::
+  # seqVCF2GDS() always strips "chr" when writing GDS files, so
+  # GMMAT::SMMAT()'s own chr:pos:ref:alt string matching against the GDS
+  # silently drops every variant (and the whole gene, if all its variants
+  # are affected) whenever gene_group_file uses a "chr19" convention
+  # instead of a bare "19". Normalizing here makes that automatic instead
+  # of a silent per-caller footgun, and writing to a fresh tempfile (always,
+  # even when gene_group_file was already a path) means the caller's own
+  # file is never modified or deleted.
+  gg_df[[2]] <- sub("^chr", "", as.character(gg_df[[2]]))
+  gg_tmp <- tempfile(fileext = ".tsv")
+  utils::write.table(gg_df, gg_tmp, sep = "\t", row.names = FALSE,
+                      col.names = FALSE, quote = FALSE)
+  on.exit(unlink(gg_tmp), add = TRUE)
+  gene_group_file <- gg_tmp
 
   gds_paths <- as.list(gds_paths)
   pop_names <- names(gds_paths)
