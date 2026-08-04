@@ -382,25 +382,41 @@ With more than two source populations, each mixed ancestry code names an
 *unordered pair* of parent populations (e.g. code 5 = AFR/NAT). The algorithm
 generalises p1/p2 to K populations in two passes per variant:
 
-1. **Build a per-population weight from unambiguous carriers.** A pure
-   homozygous-alt sample contributes 2 alleles to its own population's
-   weight; a pure heterozygote contributes 1; and — the key unambiguous case —
-   a **mixed-pair homozygous-alt** sample contributes exactly 1 allele to
+1. **Build a per-population proportion from unambiguous carriers.** A pure
+   homozygous-alt sample contributes 2 alleles to its own population's count;
+   a pure heterozygote contributes 1; and — the key unambiguous case — a
+   **mixed-pair homozygous-alt** sample contributes exactly 1 allele to
    *each* of its two parent populations, because carrying two alt copies with
    ancestry split between two populations means one copy must have come from
-   each side.
-2. **Distribute the ambiguous alleles proportionally.** A mixed-pair
-   heterozygote carries exactly one alt allele but its parental origin is
-   unknown, so it's split between its two parent populations `i` and `j`
-   using the conditional ratio `w_i / (w_i + w_j)` — i.e. in proportion to how
-   often each population's allele shows up unambiguously elsewhere at this
-   variant. If neither population has unambiguous evidence at this variant
-   (`w_i + w_j == 0`, the singleton case), GLA shrinkage (see above) supplies
-   the arm's conditional ancestry ratio for that pair instead of a flat
-   0.5/0.5 — same idea as the two-population case, generalised per pair.
+   each side. Dividing by the variant's total unambiguous alt-allele count
+   gives $p_1, \ldots, p_K$ (summing to 1).
+2. **Distribute the ambiguous alleles proportionally, per pair.** A
+   mixed-pair heterozygote in pair $(i,j)$ carries exactly one alt allele but
+   its parental origin is unknown, so it's split using the conditional ratio
+   `p_i / (p_i + p_j)` — in proportion to how often *just those two*
+   populations' alleles show up unambiguously elsewhere at this variant.
+   GLA shrinkage (see above) generalises **per pair**, not only as a fallback
+   for `p_i + p_j == 0` (the singleton case): it continuously discounts the
+   raw ratio by `w_ij` = (pair `(i,j)`'s own ambiguous-het count) / (all
+   alt-carriers at this variant, any category), blending toward the arm's
+   GLA proportions renormalised to just this pair:
 
-With K=2 there's only one mixed code and one pair, so this reduces exactly to
-the p1/p2 formulas above.
+   ```
+   p_i/(p_i+p_j)  <-  (1 - w_ij) * p_i/(p_i+p_j) + w_ij * GLA_i[arm] / (GLA_i[arm] + GLA_j[arm])
+   ```
+
+   Renormalising to the pair (instead of blending each population's raw
+   `GLA_k[arm]` in directly) is what guarantees an ambiguous AFR/EUR het is
+   never assigned any dosage toward a third population like NAT, no matter
+   how strongly shrinkage applies — only AFR and EUR ever receive a share.
+   `w_ij = 0` leaves the raw ratio untouched; `w_ij = 1` (pair `(i,j)`'s only
+   alt carriers are its own ambiguous hets) falls back entirely to the
+   pair-conditioned GLA ratio instead of a flat 0.5/0.5 — same continuum as
+   the two-population case, applied independently per pair.
+
+With K=2 there's only one mixed code and one pair, and `GLA_AFR[arm] +
+GLA_EUR[arm] = 1` by construction, so the pair-conditioned target collapses
+to plain `GLA_AFR[arm]` and this reduces exactly to the p1/p2 formulas above.
 
 ### Phased Split
 

@@ -453,18 +453,33 @@ unambiguous carrier informing 100" — it takes whatever ratio it computes at
 face value, regardless of how little evidence backs it.
 
 **GLA (global local ancestry) shrinkage** fixes both this case and the pure
-singleton with one mechanism: discount the raw ratio in proportion to how
-much of a variant's evidence is actually ambiguous, and fill in the rest
-from the chromosome arm's independently-estimated ancestry mixture:
+singleton with one mechanism: discount the raw *pairwise* ratio in
+proportion to how much of a variant's evidence is actually ambiguous **for
+that specific pair**, and fill in the rest from the chromosome arm's
+independently-estimated ancestry mixture, renormalised to just the two
+populations in the pair. For the mixed pair `(i,j)` behind a given ambiguous
+het (here, AFR/EUR):
 
-$$w = \frac{\text{ambiguous carriers}}{\text{all alt-carriers at this variant}}, \qquad
-p_k = (1-w)\,p_k^{\text{raw}} + w \cdot \text{GLA}_k[\text{arm}]$$
+$$w_{ij} = \frac{\text{pair } (i,j)\text{'s ambiguous-het count}}{\text{all alt-carriers at this variant, any category}}, \qquad
+\frac{p_i}{p_i+p_j} \;\leftarrow\; (1-w_{ij})\,\frac{p_i^{\text{raw}}}{p_i^{\text{raw}}+p_j^{\text{raw}}} + w_{ij} \cdot \frac{\text{GLA}_i[\text{arm}]}{\text{GLA}_i[\text{arm}]+\text{GLA}_j[\text{arm}]}$$
 
-`w = 0` (unambiguous carriers dominate) reduces to exactly the raw formula
-from Parts A/B. `w = 1` (the pure singleton) falls back entirely to the arm's
-GLA proportion — not a coin flip; that's just one end of this continuum, not
-a separate mechanism. `GLA_k[arm]` itself is computed once per chromosome arm
-(split at the centromere) directly from the MSP ancestry **tracts**, not from
+Blending against the pair-renormalised GLA ratio — rather than each
+population's raw `GLA_k[arm]` directly — matters once K > 2: it guarantees an
+ambiguous AFR/EUR het never receives any dosage toward a third population
+like NAT, however strongly shrinkage applies. The example below confirms
+this: `NAT total` stays exactly 0 even though `GLA_NAT[arm] = 0.05 > 0` — a
+formula that blended each `p_k` toward its raw `GLA_k[arm]` directly (instead
+of the pair-renormalised ratio above) would incorrectly leak some dosage to
+NAT here. For K = 2, where `GLA_AFR[arm] + GLA_EUR[arm] = 1` by construction,
+the pair-renormalised target collapses to plain `GLA_AFR[arm]` and this
+formula reduces to the simpler two-population case from Part A.
+
+`w_ij = 0` (pair `(i,j)`'s own unambiguous carriers dominate) reduces to
+exactly the raw pairwise ratio from Parts A/B. `w_ij = 1` (the pure singleton
+for that pair) falls back entirely to the pair's GLA-conditioned ratio — not
+a coin flip; that's just one end of this continuum, not a separate
+mechanism. `GLA_k[arm]` itself is computed once per chromosome arm (split at
+the centromere) directly from the MSP ancestry **tracts**, not from
 genotypes or phase, so it stays well-estimated regardless of how rare any
 individual variant is.
 
