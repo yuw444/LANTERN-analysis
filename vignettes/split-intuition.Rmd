@@ -461,7 +461,7 @@ populations in the pair. For the mixed pair `(i,j)` behind a given ambiguous
 het (here, AFR/EUR):
 
 $$w_{ij} = \frac{\text{pair } (i,j)\text{'s ambiguous-het count}}{\text{all alt-carriers at this variant, any category}}, \qquad
-\frac{p_i}{p_i+p_j} \;\leftarrow\; (1-w_{ij})\,\frac{p_i^{\text{raw}}}{p_i^{\text{raw}}+p_j^{\text{raw}}} + w_{ij} \cdot \frac{\text{GLA}_i[\text{arm}]}{\text{GLA}_i[\text{arm}]+\text{GLA}_j[\text{arm}]}$$
+\frac{p_i}{p_i+p_j} \leftarrow (1-w_{ij}) \frac{p_i^{\text{raw}}}{p_i^{\text{raw}}+p_j^{\text{raw}}} + w_{ij} \cdot \frac{\text{GLA}_i[\text{arm}]}{\text{GLA}_i[\text{arm}]+\text{GLA}_j[\text{arm}]}$$
 
 Blending against the pair-renormalised GLA ratio — rather than each
 population's raw `GLA_k[arm]` directly — matters once K > 2: it guarantees an
