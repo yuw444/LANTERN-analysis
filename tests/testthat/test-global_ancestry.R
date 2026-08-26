@@ -96,14 +96,30 @@ test_that("split_diploid with abundant unambiguous evidence ignores GLA (w = 0)"
 })
 
 test_that("split_diploid partial-w blends raw ratio and GLA proportionally", {
-  # variant: 1 pure-AFR het (N2=1), 1 mixed het (N5=1) -> total_carriers=2
-  # w = N5/total_carriers = 1/2
+  # variant: 1 pure-AFR het (N2=1), 1 mixed het (N5=1); no hom-alt carriers
+  # here, so allele-weighted total_alt happens to equal the unweighted
+  # carrier count (2). w = N5/total_alt = 1/2
   # raw: denom = total_alt - N5 = (1+1) - 1 = 1 ; p1_raw = (0+1+0)/1 = 1, p2_raw = 0
   gt <- matrix(c(1, 1), nrow = 1, ncol = 2)
   an <- matrix(c(3, 2), nrow = 1, ncol = 2)
   gla <- matrix(c(0.2, 0.8), nrow = 1, ncol = 2, dimnames = list("p", c("AFR", "EUR")))
   result <- split_diploid(gt, an, gla = gla, arm_id = c(0L, 0L))
   w <- 0.5
+  expect_equal(result$african[1, 2], (1 - w) * 1.0 + w * 0.2, tolerance = 1e-8)
+  expect_equal(result$european[1, 2], (1 - w) * 0.0 + w * 0.8, tolerance = 1e-8)
+})
+
+test_that("split_diploid partial-w gives hom-alt carriers 2x the confidence weight of het carriers", {
+  # variant: 1 pure-AFR HOM-ALT (N1=1, worth 2 alt alleles of confidence),
+  # 1 mixed het (N5=1, ambiguous, worth 1 allele of confidence)
+  # total_alt = 2*N1 + N5 = 2 + 1 = 3 ; w = N5/total_alt = 1/3
+  # (a naive unweighted w = N5/carriers would give 1/2, which is wrong: the
+  # hom-alt carrier's evidence should outweigh the ambiguous het's 2-to-1)
+  gt <- matrix(c(2, 1), nrow = 1, ncol = 2)
+  an <- matrix(c(3, 2), nrow = 1, ncol = 2)
+  gla <- matrix(c(0.2, 0.8), nrow = 1, ncol = 2, dimnames = list("p", c("AFR", "EUR")))
+  result <- split_diploid(gt, an, gla = gla, arm_id = c(0L, 0L))
+  w <- 1 / 3
   expect_equal(result$african[1, 2], (1 - w) * 1.0 + w * 0.2, tolerance = 1e-8)
   expect_equal(result$european[1, 2], (1 - w) * 0.0 + w * 0.8, tolerance = 1e-8)
 })
@@ -189,7 +205,8 @@ test_that("ancestry_split dosage mode applies GLA shrinkage proportionally to w"
   # GLA for this tract: 2 pure-AFR diploid calls (S1,S3) + 1 mixed (S2)
   # GLA_AFR = (2*2+1)/(2*3) = 5/6 ; GLA_EUR = (0+1)/6 = 1/6
   gla_afr <- 5 / 6
-  # w = N5/(N1+N2+N4+N5+N7+N8): N2=1 (S1 pure AFR het), N5=1 (S2 mixed het) -> w=1/2
+  # w = N5/total_alt: N2=1 (S1 pure AFR het), N5=1 (S2 mixed het), no hom-alt
+  # carriers here so total_alt equals the unweighted carrier count (2) -> w=1/2
   # raw p1 = (0+1+0)/((1+1)-1) = 1
   w <- 0.5
   expected_afr <- (1 - w) * 1.0 + w * gla_afr

@@ -122,15 +122,19 @@ static SEXP split_by_ancestry_c(SEXP gt_genotype, SEXP ancestry, SEXP gla, SEXP 
                 p2 = 0.0;
             }
         } else {
-            // GLA-shrinkage: w is the fraction of alt-carrying individuals
-            // whose ancestry-of-origin is ambiguous (mixed het, N5). The
-            // more ambiguous evidence dominates, the more p1/p2 shrinks
-            // toward this variant's arm-level global ancestry proportion.
-            // w == 1 (all evidence ambiguous) reduces to p1 = GLA exactly,
+            // GLA-shrinkage: w is the fraction of alt-allele confidence
+            // (not carrier count) that is ambiguous. Hom-alt carriers
+            // (N1, N4, N7) carry 2 alt alleles' worth of ancestry evidence
+            // vs. 1 for het carriers, so they count 2x here too -- this
+            // matches the 2x weighting already applied to them in the
+            // p1_raw/p2_raw numerator above. total_alt is already exactly
+            // this weighted total (2*N1+N2+2*N4+N5+2*N7+N8). The more
+            // ambiguous evidence dominates, the more p1/p2 shrinks toward
+            // this variant's arm-level global ancestry proportion. w == 1
+            // (all evidence ambiguous) reduces to p1 = GLA exactly,
             // subsuming the old singleton special case.
-            int total_carriers = cnt.N1 + cnt.N2 + cnt.N4 + cnt.N5 + cnt.N7 + cnt.N8;
-            if (total_carriers > 0) {
-                double w = (double) cnt.N5 / (double) total_carriers;
+            if (total_alt > 0.0) {
+                double w = (double) cnt.N5 / total_alt;
                 int arm = arm_ptr[i];
                 double gla_p1 = gla_ptr[arm + n_arms * 0];
                 double gla_p2 = gla_ptr[arm + n_arms * 1];
@@ -353,7 +357,6 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
 
         /* -- Step 1: accumulate unambiguous alt allele counts -- */
         double D = 0.0;
-        int total_carriers = 0;   /* any sample with g > 0, any category */
         memset(num, 0, K * sizeof(double));
         memset(amb, 0, M * sizeof(int));
 
@@ -361,7 +364,6 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
             int g = gp[i + nrow * j];
             int a = ap[i + nrow * j];
             if (g == 0) continue;
-            total_carriers++;
 
             /* pure ancestry */
             int hit = 0;
@@ -391,6 +393,15 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
                 }
             }
         }
+
+        /* Allele-weighted confidence total for the GLA shrinkage weight
+           below: D already counts hom-alt carriers 2x vs. het (matching
+           the p[k] numerator above); each ambiguous mixed-het contributes
+           1 unresolved allele of confidence, same as N5 in the
+           2-population case (split_by_ancestry_c). */
+        double total_amb = 0.0;
+        for (int m = 0; m < M; m++) total_amb += amb[m];
+        double total_weighted = D + total_amb;
 
         /* -- Compute p[k] -- */
         if (D > 0.0)
@@ -436,12 +447,14 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
                             out[pb][idx] = 0.5;
                         }
                     } else {
-                        /* GLA shrinkage: w is the fraction of alt-carrying
-                           individuals (any category) whose ancestry-of-origin
-                           is ambiguous for this specific pair. Raw pair ratio
-                           collapses to the GLA conditional fraction when this
-                           pair has no unambiguous hom-alt evidence of its
-                           own, so blending is well-defined even at w < 1. */
+                        /* GLA shrinkage: w is the fraction of alt-allele
+                           confidence (not carrier count) that is ambiguous
+                           for this specific pair -- hom-alt carriers count
+                           2x vs. het, matching total_weighted's derivation
+                           from D above. Raw pair ratio collapses to the GLA
+                           conditional fraction when this pair has no
+                           unambiguous hom-alt evidence of its own, so
+                           blending is well-defined even at w < 1. */
                         double gla_pa = gla_ptr[arm + n_arms * pa];
                         double gla_pb = gla_ptr[arm + n_arms * pb];
                         double gla_sum = gla_pa + gla_pb;
@@ -450,7 +463,7 @@ static SEXP split_by_ancestry_multi_c(SEXP gt, SEXP ancestry,
                         double sum_ab = pk[pa] + pk[pb];
                         double pa_raw = (sum_ab > 0.0) ? pk[pa] / sum_ab : gla_frac_pa;
 
-                        double w = (double) amb[m] / (double) total_carriers;
+                        double w = (double) amb[m] / total_weighted;
                         double blended_pa = (1.0 - w) * pa_raw + w * gla_frac_pa;
                         out[pa][idx] = blended_pa;
                         out[pb][idx] = 1.0 - blended_pa;

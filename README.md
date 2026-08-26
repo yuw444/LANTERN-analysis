@@ -355,18 +355,27 @@ the chromosome arm's independently-estimated ancestry mixture (from RFMix's
 tracts, not this variant's genotypes):
 
 ```
-w  = N5 / (N1 + N2 + N4 + N5 + N7 + N8)   # fraction of carriers that are ambiguous
+w  = N5 / total_alt   # ambiguous share of this variant's alt-allele confidence
 p1 = (1 - w) * p1_raw + w * GLA_AFR[arm]
 ```
 
-For the example above, `w = 10/11 ≈ 0.91` — the near-total ambiguity is
-almost fully discounted. If this cohort's arm-level ancestry runs 60% AFR /
-40% EUR, GLA shrinkage gives `p1 ≈ 0.55, p2 ≈ 0.45` instead of the raw
-formula's `p1=0, p2=1` — a moderate, defensible estimate instead of a hard
-call backed by one data point. `w = 0` (unambiguous carriers dominate) leaves
-the raw formula untouched; `w = 1` (the pure singleton) falls back entirely
-to the arm's GLA proportion instead of a coin flip — the old special case is
-just one end of this same continuum, not a separate mechanism.
+`total_alt` is the same allele-weighted quantity computed above
+(`2*N1 + N2 + 2*N4 + N5 + 2*N7 + N8`): hom-alt carriers count 2x, since each
+one carries two alt alleles' worth of ancestry evidence, versus 1x for a het
+carrier or an ambiguous mixed het (`N5`, which always carries exactly one,
+unresolved, allele). An unweighted per-*individual* denominator would treat
+a hom-alt carrier the same as a het one and under-count its evidence.
+
+For the example above, `w = 10/12 ≈ 0.83` — the near-total ambiguity is
+mostly (not fully — the hom-alt carrier's 2 alleles of evidence hold more
+weight than a het would) discounted. If this cohort's arm-level ancestry runs
+60% AFR / 40% EUR, GLA shrinkage gives `p1 = 0.50, p2 = 0.50` instead of the
+raw formula's `p1=0, p2=1` — a moderate, defensible estimate instead of a
+hard call backed by one data point. `w = 0` (unambiguous carriers dominate)
+leaves the raw formula untouched; `w = 1` (the pure singleton) falls back
+entirely to the arm's GLA proportion instead of a coin flip — the old
+special case is just one end of this same continuum, not a separate
+mechanism.
 
 `ancestry_split(mode = "dosage")` computes and applies this automatically.
 Pass `use_gla = FALSE` to disable it and reproduce the original raw-ratio /
@@ -397,9 +406,11 @@ generalises p1/p2 to K populations in two passes per variant:
    populations' alleles show up unambiguously elsewhere at this variant.
    GLA shrinkage (see above) generalises **per pair**, not only as a fallback
    for `p_i + p_j == 0` (the singleton case): it continuously discounts the
-   raw ratio by `w_ij` = (pair `(i,j)`'s own ambiguous-het count) / (all
-   alt-carriers at this variant, any category), blending toward the arm's
-   GLA proportions renormalised to just this pair:
+   raw ratio by `w_ij` = (pair `(i,j)`'s own ambiguous-het count) / (this
+   variant's total allele-weighted confidence — every population's
+   unambiguous alt alleles, hom-alt carriers counted 2x, plus every mixed
+   pair's own ambiguous-het count, not just pair `(i,j)`'s), blending toward
+   the arm's GLA proportions renormalised to just this pair:
 
    ```
    p_i/(p_i+p_j)  <-  (1 - w_ij) * p_i/(p_i+p_j) + w_ij * GLA_i[arm] / (GLA_i[arm] + GLA_j[arm])

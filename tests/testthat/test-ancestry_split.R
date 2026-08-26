@@ -444,9 +444,10 @@ test_that("ancestry_split K=3 dosage mode: GLA shrinkage differs by arm, singlet
   #   V1 chr19:3e7+100 (q-arm) non-singleton ambiguous AFR/EUR het (S4),
   #                  plus unambiguous S1 (pure AFR het) + S2 (pure AFR hom-alt)
   #                  -> pk[AFR]=1 (D=3, num[AFR]=3, no EUR/NAT evidence at all),
-  #                  total_carriers=3 (S1,S2,S4), w=1/3,
+  #                  allele-weighted total = D + amb = 3 + 1 = 4 (S2's hom-alt
+  #                  counts 2x), w = amb/total = 1/4,
   #                  gla_frac_AFR(q) = (5/6)/(5/6+1/12) = 10/11,
-  #                  blended = (2/3)*1.0 + (1/3)*(10/11) = 32/33
+  #                  blended = (3/4)*1.0 + (1/4)*(10/11) = 43/44
   #   V2 chr19:3e7+200 (q-arm) singleton ambiguous AFR/EUR het (S4 only carrier)
   #                  -> w=1, blends fully to gla_frac_AFR(q) = 10/11
   #   V5 chr19:99999999 (outside both tracts) -> dropped, "no tract"
@@ -501,8 +502,8 @@ test_that("ancestry_split K=3 dosage mode: GLA shrinkage differs by arm, singlet
 
   # V1: q-arm non-singleton AFR/EUR, partial shrinkage (w=1/3)
   s4_idx <- match("S4", result$sample_ids)
-  expect_equal(result$AFR[2, s4_idx], 32/33, tolerance = 1e-9)
-  expect_equal(result$EUR[2, s4_idx], 1/33,  tolerance = 1e-9)
+  expect_equal(result$AFR[2, s4_idx], 43/44, tolerance = 1e-9)
+  expect_equal(result$EUR[2, s4_idx], 1/44,  tolerance = 1e-9)
   expect_equal(result$AFR[2, s4_idx] + result$EUR[2, s4_idx] + result$NAT[2, s4_idx], 1, tolerance = 1e-9)
   # unambiguous pure-AFR carriers on the same variant are untouched by shrinkage
   s1_idx <- match("S1", result$sample_ids)
