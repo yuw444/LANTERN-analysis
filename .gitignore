@@ -1,0 +1,11 @@
+# Build artifacts
+src/*.o
+src/*.so
+src/*.dll
+*.tar.gz
+*.Rcheck/
+.Rproj.user/
+.Rhistory
+
+# pkgdown output (site is built from the `tooling` branch)
+docs/
