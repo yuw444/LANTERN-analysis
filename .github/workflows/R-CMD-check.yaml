@@ -1,0 +1,68 @@
+# This workflow lives on the `tooling` branch only: Bioconductor requires
+# the default branch (devel) to contain only package code. To check / rebuild
+# the site against the latest package: git checkout tooling && git merge devel
+# && git push.
+on:
+  push:
+    branches: [tooling]
+  workflow_dispatch:
+
+name: R CMD check
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    name: R CMD check (bcftools ${{ matrix.bcftools && 'on PATH' || 'absent, SeqArray reader' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        bcftools: [true, false]
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      _R_CHECK_FORCE_SUGGESTS_: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libcurl4-openssl-dev libssl-dev libxml2-dev \
+            libhdf5-dev libbz2-dev liblzma-dev \
+            ${{ matrix.bcftools && 'bcftools' || '' }}
+
+      # pak (via setup-r-dependencies below) intermittently fails to install
+      # Rhtslib after building it from source ("Failed to install binary
+      # package Rhtslib") — a known upstream pak issue. Installing
+      # SeqArray/SeqVarTools with BiocManager first (plain install.packages(),
+      # no pak) avoids that code path; pak then sees them already satisfied.
+      - name: Install Bioconductor dependencies
+        run: |
+          Rscript -e 'if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")'
+          Rscript -e 'BiocManager::install(c("SeqArray", "SeqVarTools", "BiocStyle"), ask = FALSE, update = FALSE)'
+
+      # Install remaining DESCRIPTION deps.
+      # Includes Suggests (GMMAT, BiocStyle), which the examples, tests and
+      # vignettes use.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: .
+          extra-packages: |
+            any::knitr
+            any::rmarkdown
+            any::rcmdcheck
+
+      # --no-manual skips PDF manual (no LaTeX needed).
+      # error-on: '"error"' passes warnings but fails on errors.
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          working-directory: .
+          args: 'c("--no-manual", "--timings")'
+          error-on: '"error"'
+          upload-snapshots: true

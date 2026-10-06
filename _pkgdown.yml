@@ -1,0 +1,64 @@
+url: https://yuw444.github.io/lantern/
+
+template:
+  bootstrap: 3
+
+home:
+  title: "LANTERN"
+  description: >
+    Ancestry-specific rare variant burden testing for admixed populations.
+    Splits genotype dosages by local ancestry (phased or unphased) and runs
+    ancestry-stratified SMMAT gene-level tests via GMMAT.
+
+navbar:
+  structure:
+    left:  [intro, articles, reference]
+    right: [github]
+  components:
+    github:
+      icon: "fab fa-github fa-lg"
+      aria-label: "GitHub"
+      href: https://github.com/yuw444/lantern
+
+articles:
+  - title: "Workflows"
+    navbar: "Workflows"
+    contents:
+      - lantern
+      - split-intuition
+      - toy-vcf-msp-example
+      - real-data-chr19
+
+reference:
+  - title: "Step 1: split"
+    desc: >
+      Split a VCF (or raw genotype/ancestry matrices) by local ancestry.
+      ancestry_split() and the K-population split_*_multi() primitives work
+      for any number of populations, not just two.
+    contents:
+      - ancestry_split
+      - ancestry_split_dosage
+      - ancestry_split_phased
+      - split_diploid
+      - split_diploid_multi
+      - split_haplotype
+      - split_haplotype_multi
+      - read_bed_file
+
+  - title: "Step 2: write GDS"
+    desc: Materialize a Step 1 split result to per-population GDS files.
+    contents:
+      - write_ancestry_gds
+      - write_dosage_gds
+
+  - title: "Step 3: associate"
+    desc: >
+      Run GMMAT::SMMAT() across ancestry-split GDS files and Cauchy-combine
+      the per-gene p-values.
+    contents:
+      - ancestry_smmat
+      - cauchy_combine
+
+  - title: "Package"
+    contents:
+      - lantern-package
