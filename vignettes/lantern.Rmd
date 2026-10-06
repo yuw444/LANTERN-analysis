@@ -1,0 +1,143 @@
+---
+title: "Getting started with lantern"
+author:
+  - name: Yu Wang
+  - name: Bjoernar Tuftin
+  - name: Paul Auer
+output: BiocStyle::html_document
+vignette: >
+  %\VignetteIndexEntry{Getting started with lantern}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+# Introduction
+
+In admixed individuals, each stretch of the genome is inherited from one of
+several ancestral populations. A rare-variant burden test that pools all
+carriers can miss an effect that exists in only one ancestral background,
+or wrongly attribute one. **lantern** uses local ancestry to split each
+sample's alternate-allele dosage into per-ancestry dosages (e.g. African
+and European). It then runs gene-level `SMMAT` tests
+([GMMAT](https://cran.r-project.org/package=GMMAT)) separately for each
+ancestry and combines the per-ancestry p-values with the Cauchy combination
+test.
+
+The workflow has three steps:
+
+1. **Split** a phased VCF by local ancestry from an RFMix `.msp.tsv` file
+   with `ancestry_split()`.
+2. **Write** each ancestry's dosages to a `r Biocpkg("SeqArray")` GDS file
+   with `write_ancestry_gds()`.
+3. **Test** each gene in every ancestry and Cauchy-combine the results with
+   `ancestry_smmat()`.
+
+# Installation
+
+```{r install, eval = FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("lantern")
+```
+
+```{r load}
+library(lantern)
+```
+
+lantern reads VCFs with `bcftools` when it is on `PATH`, which is fastest
+and also reads BCF. Otherwise it falls back to `r Biocpkg("SeqArray")`, so
+no external tools are needed.
+
+# Example data
+
+The package ships a small simulated dataset: 60 admixed samples, 200 rare
+variants on chromosome 19, two ancestral populations (AFR, EUR) and 8 genes.
+The phenotype carries an effect that is driven only by African-ancestry
+alleles in `GENE2`.
+
+```{r files}
+ext <- system.file("extdata", package = "lantern")
+vcf <- file.path(ext, "toy.vcf.gz")     # phased genotypes
+msp <- file.path(ext, "toy.msp.tsv")    # RFMix local ancestry
+substr(readLines(msp, n = 3), 1, 70)
+```
+
+# Step 1: split dosages by local ancestry
+
+`mode = "haplotype"` assigns each phased allele to the ancestry of its own
+haplotype, so it is exact. `mode = "dosage"` ignores phase: it splits
+ambiguous mixed-ancestry heterozygotes using population proportions
+estimated from the unambiguous carriers, shrunk toward each chromosome
+arm's global ancestry. See `vignette("split-intuition")` for the details.
+
+```{r split}
+split <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
+                        verbose = FALSE)
+names(split)
+dim(split$AFR)
+split$AFR[1:4, 1:6]
+split$EUR[1:4, 1:6]
+```
+
+The result also records which variants and samples were kept:
+
+```{r kept}
+head(split$variant_info)
+split$overlap[c("n_common", "n_variants_kept", "n_monomorphic_filtered")]
+```
+
+# Step 2: write per-ancestry GDS files
+
+```{r gds}
+out_dir <- tempfile("lantern-")
+gds <- write_ancestry_gds(split, out_dir, verbose = FALSE)
+gds
+```
+
+# Step 3: ancestry-stratified gene tests
+
+`ancestry_smmat()` fits the null model once with `GMMAT::glmmkin()`, then
+runs `GMMAT::SMMAT()` on each ancestry's GDS file. Gene-level weights for
+the Cauchy combination are the median per-variant carrier counts in each
+ancestry. The samples here are unrelated, so the kinship matrix is the
+identity.
+
+```{r smmat, eval = requireNamespace("GMMAT", quietly = TRUE) && requireNamespace("SeqVarTools", quietly = TRUE)}
+pheno <- read.delim(file.path(ext, "toy_pheno.tsv"))
+kinship <- diag(nrow(pheno))
+dimnames(kinship) <- list(pheno$id, pheno$id)
+
+res <- ancestry_smmat(gds, pheno, y ~ age + sex, kinship,
+                      gene_group_file = file.path(ext, "toy_genes.tsv"),
+                      ancestry_counts = split$ancestry_counts,
+                      variant_info    = split$variant_info,
+                      verbose = FALSE)
+res$results
+```
+
+`GENE2` is strongly associated in the AFR test but not in the EUR test,
+which matches the simulated African-specific effect. A test that pools both
+ancestries would dilute that signal.
+
+```{r cleanup, include = FALSE}
+unlink(out_dir, recursive = TRUE)
+```
+
+# Further reading
+
+- `vignette("split-intuition")`: what the split computes, on small
+  matrices, for two or more populations.
+- `vignette("toy-vcf-msp-example")`: the VCF and MSP input formats, with
+  four populations.
+- `vignette("real-data-chr19")`: a real-cohort analysis with binary,
+  continuous and count phenotypes.
+
+# Session information
+
+```{r session}
+sessionInfo()
+```

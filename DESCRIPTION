@@ -1,7 +1,7 @@
 Package: lantern
 Type: Package
 Title: Ancestry-Specific Rare Variant Association Analysis
-Version: 0.1.1
+Version: 0.99.0
 Authors@R: c(
     person(given = "Yu",
            family = "Wang",
@@ -16,26 +16,35 @@ Authors@R: c(
            role = "aut",
            email = "pauer@mcw.edu"))
 Description: Ancestry-specific rare variant burden testing for admixed
-    populations. Uses a pure C backend to split genotype dosages by local
-    ancestry inferred from phased or unphased data, then runs
-    ancestry-stratified SMMAT gene-level tests via GMMAT.
-URL: https://yuw444.github.io/LANTERN/, https://github.com/yuw444/LANTERN
-Additional_repositories: https://bioconductor.org/packages/release/bioc
-    https://bioconductor.org/packages/release/data/annotation
-SystemRequirements: bcftools (>= 1.10)
+    populations. Splits genotype dosages by local ancestry (as inferred by
+    'RFMix') into per-ancestry dosages, using either phased haplotypes or
+    unphased genotypes with shrinkage toward global ancestry, and writes
+    them to 'SeqArray' GDS files. Ancestry-stratified gene-level tests are
+    then run with the 'SMMAT' framework of Chen et al. (2019)
+    <doi:10.1016/j.ajhg.2018.12.012> as implemented in 'GMMAT', and the
+    per-ancestry p-values are combined with the Cauchy combination test of
+    Liu and Xie (2020) <doi:10.1080/01621459.2018.1554485>.
+URL: https://yuw444.github.io/lantern/, https://github.com/yuw444/lantern
+BugReports: https://github.com/yuw444/lantern/issues
+SystemRequirements: bcftools (>= 1.10) (optional; faster VCF reading and
+    BCF input)
 License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: false
+Depends:
+    R (>= 4.5.0)
 Imports:
     data.table,
-    SeqArray
+    SeqArray,
+    stats,
+    utils
 Suggests:
-    dplyr,
+    BiocStyle,
     GMMAT,
     knitr,
-    pkgdown,
     rmarkdown,
+    SeqVarTools,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
+biocViews: Software, Genetics, GenomeWideAssociation, SNP, VariantAnnotation
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0

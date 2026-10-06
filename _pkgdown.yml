@@ -1,4 +1,4 @@
-url: https://yuw444.github.io/LANTERN/
+url: https://yuw444.github.io/lantern/
 
 template:
   bootstrap: 3
@@ -18,12 +18,13 @@ navbar:
     github:
       icon: "fab fa-github fa-lg"
       aria-label: "GitHub"
-      href: https://github.com/yuw444/LANTERN
+      href: https://github.com/yuw444/lantern
 
 articles:
   - title: "Workflows"
     navbar: "Workflows"
     contents:
+      - lantern
       - split-intuition
       - toy-vcf-msp-example
       - real-data-chr19

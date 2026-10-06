@@ -1,5 +1,4 @@
 ^src/AGENTS\.md$
-^data-raw$
 ^docs$
 ^lantern\.Rcheck$
 ^.*\.tar\.gz$
@@ -7,3 +6,9 @@
 ^\.github$
 ^vignettes/.*\.orig$
 ^vignettes/.*\.draft$
+^_pkgdown\.yml$
+^pkgdown$
+^AGENTS\.md$
+^cran-comments\.md$
+^CRAN-SUBMISSION$
+^README\.Rmd$

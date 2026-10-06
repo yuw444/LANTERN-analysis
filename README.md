@@ -2,10 +2,10 @@
 
 **L**everaging Local **AN**cestry **T**racts to **E**nhance **R**are-Varia**N**t Aggregate Association Testing
 
-[![pkgdown site](https://img.shields.io/badge/docs-pkgdown-blue)](https://yuw444.github.io/LANTERN/)
-[![GitHub](https://img.shields.io/badge/source-GitHub-lightgrey)](https://github.com/yuw444/LANTERN)
+[![pkgdown site](https://img.shields.io/badge/docs-pkgdown-blue)](https://yuw444.github.io/lantern/)
+[![GitHub](https://img.shields.io/badge/source-GitHub-lightgrey)](https://github.com/yuw444/lantern)
 
-Full documentation, vignettes, and function reference: **[https://yuw444.github.io/LANTERN/](https://yuw444.github.io/LANTERN/)**. MedRxiv: [2026.04. 24.26351693](https://www.medrxiv.org/content/10.64898/2026.04.24.26351693v1.full.pdf)
+Full documentation, vignettes, and function reference: **[https://yuw444.github.io/lantern/](https://yuw444.github.io/lantern/)**. MedRxiv: [2026.04. 24.26351693](https://www.medrxiv.org/content/10.64898/2026.04.24.26351693v1.full.pdf)
 
 ## Features
 
@@ -27,14 +27,7 @@ dependencies in one step:
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
-BiocManager::install("yuw444/LANTERN/lantern")
-```
-
-Or pre-install the Bioconductor dependency first, then use devtools:
-
-```r
-BiocManager::install("SeqArray")
-devtools::install_github("yuw444/LANTERN", subdir = "lantern")
+BiocManager::install("yuw444/lantern")
 ```
 
 ## Quick Start
@@ -502,7 +495,6 @@ the full argument/return-value reference.
 | [data.table](https://cran.r-project.org/package=data.table)   | Required  | CRAN         | —                     |
 | [SeqArray](https://bioconductor.org/packages/SeqArray/)       | Required  | Bioconductor | GDS file I/O           |
 | [GMMAT](https://cran.r-project.org/package=GMMAT)             | Suggested | CRAN         | SMMAT gene-level tests |
-| [dplyr](https://cran.r-project.org/package=dplyr)             | Suggested | CRAN         | Vignettes only         |
 
 **Bioconductor packages (SeqArray) are not installed automatically by `devtools::install_github()`.**
 Use the `BiocManager` installation instructions above.
@@ -511,9 +503,9 @@ Use the `BiocManager` installation instructions above.
 
 | Tool                                                | Version | Required for                                                                                               |
 | --------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
-| [`bcftools`](https://samtools.github.io/bcftools/) | ≥ 1.10 | VCF/BCF-reading functions only (`ancestry_split()`, `ancestry_split_phased()`) — not needed for the matrix-in/matrix-out functions (`split_diploid()`, `ancestry_split_dosage()`, etc.) |
+| [`bcftools`](https://samtools.github.io/bcftools/) | ≥ 1.10 | Optional. When it is on `PATH`, `ancestry_split()` and `ancestry_split_phased()` use it to read VCFs (faster, and required for BCF input). Without it they read the VCF through SeqArray. Force either reader with `options(lantern.vcf_reader = "bcftools")` or `"seqarray"`. |
 
-Install bcftools via your system package manager:
+To install bcftools for faster VCF reading:
 
 ```bash
 # macOS
@@ -525,9 +517,6 @@ sudo apt install bcftools
 # Conda / pixi
 conda install -c bioconda bcftools
 ```
-
-The unphased splitting functions (`split_diploid`, `split_diploid_multi`,
-`ancestry_split_dosage`) do **not** require bcftools.
 
 ### Compiler
 

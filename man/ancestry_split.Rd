@@ -14,15 +14,18 @@ ancestry_split(
 )
 }
 \arguments{
-\item{vcf_path}{Path to phased VCF/BCF file (plain or gzipped).
-\code{bcftools} must be in \code{PATH}.}
+\item{vcf_path}{Path to phased VCF/BCF file (plain or gzipped). Read
+with \code{bcftools} if it is on \code{PATH} (fastest; required for
+BCF), otherwise with \pkg{SeqArray}. Set
+\code{options(lantern.vcf_reader = "bcftools")} or \code{"seqarray"}
+to force one.}
 
 \item{msp_path}{Path to RFMix MSP file (plain text or gzipped TSV).}
 
 \item{mode}{Split algorithm: \code{"dosage"} (proportional p1/p2 split
 via \code{\link{split_diploid_multi}}, unphased) or \code{"haplotype"}
 (deterministic per-haplotype split via
-\code{\link{split_haplotype_multi}}, phased). Either/or — call
+\code{\link{split_haplotype_multi}}, phased). Either/or -- call
 \code{ancestry_split()} twice if both are needed.}
 
 \item{chrom}{Chromosome to process (e.g., \code{"chr19"} or \code{"19"}).
@@ -75,12 +78,13 @@ then to \code{\link{ancestry_smmat}} (Step 3) to run SMMAT + Cauchy
 combination.
 }
 \examples{
-\dontrun{
-split <- ancestry_split("cohort.phased.bcf", "cohort.msp.tsv.gz",
-                         mode = "dosage", chrom = "chr19")
-split$AFR   # African dosage matrix
-split$EUR   # European dosage matrix
-}
+vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+split <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
+                        verbose = FALSE)
+split$AFR[1:3, 1:5]   # African dosages (variants x samples)
+split$EUR[1:3, 1:5]   # European dosages
+head(split$variant_info)
 
 }
 \seealso{

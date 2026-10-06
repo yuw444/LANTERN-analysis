@@ -9,15 +9,15 @@
 R package for ancestry-specific rare variant association analysis
 with pure C backend for performance-critical operations.
 }
-\section{Step 1 — split}{
+\section{Step 1 -- split}{
  \code{\link{ancestry_split}}
 }
 
-\section{Step 2 — write GDS}{
+\section{Step 2 -- write GDS}{
  \code{\link{write_ancestry_gds}}
 }
 
-\section{Step 3 — associate}{
+\section{Step 3 -- associate}{
  \code{\link{ancestry_smmat}}
 }
 
@@ -26,6 +26,7 @@ Useful links:
 \itemize{
   \item \url{https://yuw444.github.io/LANTERN/}
   \item \url{https://github.com/yuw444/LANTERN}
+  \item Report bugs at \url{https://github.com/yuw444/LANTERN/issues}
 }
 
 }
@@ -40,3 +41,4 @@ Authors:
 }
 
 }
+\keyword{internal}

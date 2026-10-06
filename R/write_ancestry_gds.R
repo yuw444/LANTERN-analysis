@@ -30,11 +30,13 @@
 #'   \code{\link{cauchy_combine}}
 #'
 #' @examples
-#' \dontrun{
-#' split <- ancestry_split("cohort.bcf", "cohort.msp.tsv", mode = "haplotype")
-#' write_dosage_gds(split$AFR, split$variant_info, split$sample_ids, "afr_phased.gds")
-#' write_dosage_gds(split$EUR, split$variant_info, split$sample_ids, "eur_phased.gds")
-#' }
+#' vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+#' msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+#' split <- ancestry_split(vcf, msp, mode = "haplotype", chrom = "chr19",
+#'                         verbose = FALSE)
+#' afr_gds <- tempfile(fileext = ".gds")
+#' write_dosage_gds(split$AFR, split$variant_info, split$sample_ids, afr_gds)
+#' unlink(afr_gds)
 #'
 #' @export
 write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
@@ -121,10 +123,14 @@ write_dosage_gds <- function(dosage_mat, variant_info, sample_ids, gds_path) {
 #' @seealso \code{\link{ancestry_split}}, \code{\link{ancestry_smmat}}
 #'
 #' @examples
-#' \dontrun{
-#' split <- ancestry_split("cohort.bcf", "cohort.msp.tsv.gz", mode = "dosage")
-#' gds   <- write_ancestry_gds(split, "out/")
-#' }
+#' vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+#' msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+#' split <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
+#'                         verbose = FALSE)
+#' out_dir <- tempfile()
+#' gds <- write_ancestry_gds(split, out_dir, verbose = FALSE)
+#' gds   # one GDS file per population
+#' unlink(out_dir, recursive = TRUE)
 #'
 #' @export
 write_ancestry_gds <- function(split_result, out_path, verbose = TRUE) {

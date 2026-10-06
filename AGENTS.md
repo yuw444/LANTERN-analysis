@@ -14,7 +14,7 @@ lantern/
 │   ├── ancestry_smmat.R           # Step 3: ancestry_smmat() (SMMAT + per-gene ancestry weights + Cauchy combination)
 │   ├── utils.R                    # cauchy_combine()
 │   ├── lantern-package.R          # package-level roxygen doc
-│   └── sysdata.rda                # internal data: centromeres_hg38 (from data-raw/centromeres_hg38.R)
+│   └── sysdata.rda                # internal data: centromeres_hg38 (from inst/scripts/centromeres_hg38.R)
 ├── src/                           # C backend — see lantern/src/AGENTS.md
 │   ├── ancestry.c                 # ALL core algorithms: p1/p2 split, phased split, bed reader
 │   ├── ancestry.h                 # C function declarations

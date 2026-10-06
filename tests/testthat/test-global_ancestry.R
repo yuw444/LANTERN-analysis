@@ -4,7 +4,7 @@
 # ============================================================================
 
 test_that(".assign_arm classifies p/q arms using the hg38 centromere table", {
-  # chr19 centromere (data-raw/centromeres_hg38.R): p_end=24498980, q_start=27190874
+  # chr19 centromere (inst/scripts/centromeres_hg38.R): p_end=24498980, q_start=27190874
   expect_equal(.assign_arm("chr19", 100), 0L)
   expect_equal(.assign_arm("19", 24498979), 0L)
   expect_equal(.assign_arm("chr19", 24498980), 1L)   # inside gap -> q tie-break

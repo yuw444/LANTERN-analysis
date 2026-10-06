@@ -46,6 +46,7 @@ test_that(".compute_gene_weights falls back to NULL when no population names mat
 test_that("ancestry_smmat() runs SMMAT per population and Cauchy-combines p-values", {
   skip_if_not_installed("GMMAT")
   skip_if_not_installed("SeqArray")
+  skip_if_not_installed("SeqVarTools")
 
   set.seed(42)
   n     <- 30
@@ -108,6 +109,7 @@ test_that("ancestry_smmat() runs SMMAT per population and Cauchy-combines p-valu
 test_that("ancestry_smmat() accepts gene_group_file as a plain file path and never deletes it", {
   skip_if_not_installed("GMMAT")
   skip_if_not_installed("SeqArray")
+  skip_if_not_installed("SeqVarTools")
 
   set.seed(7)
   n     <- 20
@@ -152,6 +154,7 @@ test_that("ancestry_smmat() accepts gene_group_file as a plain file path and nev
 test_that("ancestry_smmat() normalizes a 'chr'-prefixed gene_group_file chr column", {
   skip_if_not_installed("GMMAT")
   skip_if_not_installed("SeqArray")
+  skip_if_not_installed("SeqVarTools")
 
   set.seed(11)
   n     <- 20
@@ -190,6 +193,7 @@ test_that("ancestry_smmat() normalizes a 'chr'-prefixed gene_group_file chr colu
 test_that("ancestry_smmat() falls back to equal weights when ancestry_counts is omitted", {
   skip_if_not_installed("GMMAT")
   skip_if_not_installed("SeqArray")
+  skip_if_not_installed("SeqVarTools")
 
   set.seed(1)
   n     <- 20
@@ -225,6 +229,7 @@ test_that("ancestry_smmat() falls back to equal weights when ancestry_counts is 
 test_that("full Step1->2->3 pipeline works for K = 4 populations", {
   skip_if_not_installed("GMMAT")
   skip_if_not_installed("SeqArray")
+  skip_if_not_installed("SeqVarTools")
 
   td <- tempfile()
   dir.create(td, recursive = TRUE)

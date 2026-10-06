@@ -14,8 +14,8 @@
 \value{
 List with: \code{pop_codes} (named integer vector),
   \code{sample_ids} (character), \code{tract_df} (data.frame sorted by
-  spos), \code{anc_hap0} (integer matrix: samples × tracts),
-  \code{anc_hap1} (integer matrix: samples × tracts).
+  spos), \code{anc_hap0} (integer matrix: samples x tracts),
+  \code{anc_hap1} (integer matrix: samples x tracts).
 }
 \description{
 Parse the RFMix MSP (local ancestry tract) file into ancestry matrices.

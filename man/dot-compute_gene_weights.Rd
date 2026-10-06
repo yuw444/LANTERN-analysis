@@ -19,7 +19,7 @@ returned by \code{\link{ancestry_split}}.}
 \code{ancestry_counts}, as returned by \code{\link{ancestry_split}}.}
 
 \item{gene_group_file}{Path to the gene_group file (no header; columns
-gene, chr, pos, ref, alt, weight) — the same file passed to
+gene, chr, pos, ref, alt, weight) -- the same file passed to
 \code{GMMAT::SMMAT()}.}
 
 \item{pop_names}{Character vector of population names to produce weight

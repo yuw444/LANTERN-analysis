@@ -14,8 +14,11 @@ ancestry_split_phased(
 )
 }
 \arguments{
-\item{vcf_path}{Path to phased VCF/BCF file (plain or gzipped).
-\code{bcftools} must be in \code{PATH}.}
+\item{vcf_path}{Path to phased VCF/BCF file (plain or gzipped). Read
+with \code{bcftools} if it is on \code{PATH} (fastest; required for
+BCF), otherwise with \pkg{SeqArray}. Set
+\code{options(lantern.vcf_reader = "bcftools")} or \code{"seqarray"}
+to force one.}
 
 \item{msp_path}{Path to RFMix MSP file (plain text or gzipped TSV).}
 
@@ -31,8 +34,8 @@ GDS files via \code{\link{write_ancestry_gds}} (Step 2).}
 }
 \value{
 Invisibly, a list with elements:
-  \item{african}{Numeric matrix (variants × samples) of African dosages.}
-  \item{european}{Numeric matrix (variants × samples) of European dosages.}
+  \item{african}{Numeric matrix (variants x samples) of African dosages.}
+  \item{european}{Numeric matrix (variants x samples) of European dosages.}
   \item{variant_info}{data.frame with columns chrom, pos, ref, alt.}
   \item{sample_ids}{Character vector of common sample IDs.}
   \item{tract_info}{data.frame of ancestry tracts from the MSP file.}
@@ -49,15 +52,13 @@ separate, call \code{ancestry_split()} and \code{write_ancestry_gds()}
 directly.
 }
 \examples{
-\dontrun{
-result <- ancestry_split_phased(
-  vcf_path = "data/chr19.phased.bcf",
-  msp_path = "data/chr19.msp.tsv.gz",
-  out_path = "output/",
-  chrom    = "chr19",
-  write_vcf = TRUE
-)
+vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+out_dir <- tempfile()
+result <- ancestry_split_phased(vcf, msp, out_path = out_dir,
+                                chrom = "chr19", write_vcf = FALSE,
+                                verbose = FALSE)
 head(result$variant_info)
-}
+unlink(out_dir, recursive = TRUE)
 
 }

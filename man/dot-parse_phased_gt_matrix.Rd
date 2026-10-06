@@ -13,7 +13,7 @@
 )
 }
 \arguments{
-\item{gt_mat}{Character matrix (variants × samples).}
+\item{gt_mat}{Character matrix (variants x samples).}
 
 \item{n_variants}{Number of variants.}
 

@@ -79,11 +79,10 @@ result <- ancestry_split_dosage(gt, pt)
 # Only sample_A and sample_B are kept (common to both)
 # Only chr1:100 and chr1:200 that overlap regions are kept
 
-\dontrun{
 # Shortcut: build matrices directly from VCF + MSP
-result <- ancestry_split_dosage(vcf_path = "data/chr19.phased.bcf",
-                                 msp_path = "data/chr19.msp.tsv.gz",
-                                 chrom    = "chr19")
-}
+vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+result <- ancestry_split_dosage(vcf_path = vcf, msp_path = msp,
+                                chrom = "chr19", verbose = FALSE)
 
 }
