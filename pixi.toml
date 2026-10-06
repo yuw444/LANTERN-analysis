@@ -38,6 +38,7 @@ gh = ">=2.95.0,<3"
 r-venn = ">=1.13,<2"
 bioconductor-fgsea = ">=1.36.2,<2"
 r-msigdbr = ">=26.1.0,<27"
+bioconductor-biocstyle = ">=2.38.0,<3"
 
 [tasks]
 install-lantern = "R_MAKEVARS_USER=$PWD/R.Makevars.local R CMD INSTALL lantern/"

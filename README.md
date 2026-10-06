@@ -233,7 +233,7 @@ weighting across all $K$ populations instead.
 The `lantern` R package is on GitHub. It has two categories of dependencies:
 
 - **Bioconductor R package** — [SeqArray](https://bioconductor.org/packages/SeqArray/) is not on CRAN; `devtools::install_github()` will not find it automatically.
-- **System binary** — the phased-haplotype pipeline shells out to [`bcftools`](https://samtools.github.io/bcftools/) (≥ 1.10) for VCF reading and sample subsetting. Install it via your system package manager (`brew install bcftools` on macOS, `apt install bcftools` on Debian/Ubuntu) before using phased-mode functions.
+- **Optional system binary** — when [`bcftools`](https://samtools.github.io/bcftools/) (≥ 1.10) is on `PATH`, VCF reading uses it (faster, and required for BCF input). Otherwise lantern reads VCFs through SeqArray. Install it via your system package manager (`brew install bcftools` on macOS, `apt install bcftools` on Debian/Ubuntu).
 - **`GMMAT`** (CRAN) — only needed for Step 2/3 (`ancestry_smmat()`), not for Step 1 splitting alone: `install.packages("GMMAT")`.
 
 **Recommended installation** (handles the Bioconductor dependency):
@@ -275,7 +275,7 @@ Cauchy combination are computed automatically inside Step 2.
 * `GMMAT`: `install.packages("GMMAT")` (CRAN). If you're running from a clone
   of this repo via `pixi`, its conda-forge R environment doesn't have a CRAN
   mirror configured by default — use `pixi run install-cran-gmmat` instead.
-* `bcftools` ≥ 1.10 on `PATH`
+* Optional: `bcftools` ≥ 1.10 on `PATH` for faster VCF reading (required for BCF input)
 * An RFMix2-produced `.msp.tsv` file. There's no vignette covering RFMix2
   itself yet — see [RFMix2's own docs](https://github.com/slowkoni/rfmix)
   for producing one from a phased VCF + reference panel.

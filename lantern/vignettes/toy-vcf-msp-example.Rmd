@@ -24,7 +24,7 @@ Population count and names come directly from the MSP header, so the same
 call works unchanged for K = 2 or K > 2. Part A builds a two-population
 toy VCF + MSP; Part B does the same for four populations.
 
----
+***
 
 # Part A: Two populations
 
@@ -96,7 +96,7 @@ input) and `ancestry_split_phased()` (VCF/MSP input, optionally also
 writing GDS) wrap the same logic for existing code — see
 `?ancestry_split_dosage` and `?ancestry_split_phased`.
 
----
+***
 
 # Part B: More than two populations (K = 4)
 
@@ -161,3 +161,9 @@ cat("=== unphased AFR (first 3 variants) ===\n"); print(round(unphased4$AFR[1:3,
 Next: `vignette("real-data-chr19")` takes a split result like this one
 through `write_ancestry_gds()` (Step 2) and `ancestry_smmat()` (Step 3) on
 real genotype data.
+
+## Session information
+
+```{r session}
+sessionInfo()
+```

@@ -21,7 +21,7 @@
 #' Liu, Y. and Xie, J. (2020). Cauchy Combination Test: A Powerful Test With
 #' Analytic p-Value Calculation Under Arbitrary Dependency Structures.
 #' \emph{J. Am. Stat. Assoc.} \strong{115}(529), 393--402.
-#' \doi{10.1080/01621459.2019.1672715}
+#' \doi{10.1080/01621459.2018.1554485}
 #'
 #' @examples
 #' # Combine African-ancestry and European-ancestry p-values for one gene

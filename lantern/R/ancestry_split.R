@@ -222,17 +222,17 @@ split_diploid_multi <- function(gt_genotype, ancestry,
 #' to whichever ancestry pool matches its local ancestry call; haplotypes
 #' with unrecognised ancestry codes contribute nothing to either pool.
 #'
-#' @param gt_hap0 Integer matrix (variants × samples) of haplotype-0 alleles (0/1).
-#' @param gt_hap1 Integer matrix (variants × samples) of haplotype-1 alleles (0/1).
-#' @param anc_hap0 Integer matrix (variants × samples) of haplotype-0 ancestry codes.
-#' @param anc_hap1 Integer matrix (variants × samples) of haplotype-1 ancestry codes.
+#' @param gt_hap0 Integer matrix (variants x samples) of haplotype-0 alleles (0/1).
+#' @param gt_hap1 Integer matrix (variants x samples) of haplotype-1 alleles (0/1).
+#' @param anc_hap0 Integer matrix (variants x samples) of haplotype-0 ancestry codes.
+#' @param anc_hap1 Integer matrix (variants x samples) of haplotype-1 ancestry codes.
 #' @param pop_codes Named integer vector of length 2 giving the AFR and EUR
 #'   ancestry codes as used in the MSP file.  Defaults to
 #'   \code{c(AFR = 0L, EUR = 1L)} (RFMix convention).
 #'
 #' @return List with two numeric matrices:
-#'   \item{african}{African ancestry-specific dosage (variants × samples)}
-#'   \item{european}{European ancestry-specific dosage (variants × samples)}
+#'   \item{african}{African ancestry-specific dosage (variants x samples)}
+#'   \item{european}{European ancestry-specific dosage (variants x samples)}
 #'
 #' @examples
 #' gt0 <- matrix(c(1L, 0L, 0L, 1L), 2, 2)
@@ -332,9 +332,11 @@ split_haplotype_multi <- function(gt_hap0, gt_hap1, anc_hap0, anc_hap1,
 #' @seealso \code{\link{split_diploid}}, \code{\link{ancestry_split_dosage}}
 #'
 #' @examples
-#' \dontrun{
-#' pt <- read_bed_file("ancestry.bed", "ancestry.bim", "ancestry.fam")
-#' }
+#' ext <- system.file("extdata", package = "lantern")
+#' pt <- read_bed_file(file.path(ext, "toy_ancestry.bed"),
+#'                     file.path(ext, "toy_ancestry.bim"),
+#'                     file.path(ext, "toy_ancestry.fam"))
+#' pt[, 1:6]   # ancestry tracts x samples, codes 1/2/3
 #'
 #' @export
 read_bed_file <- function(bed, bim, fam) {
@@ -364,8 +366,8 @@ read_bed_file <- function(bed, bim, fam) {
 #' @param verbose Print progress messages.
 #' @return List with: \code{pop_codes} (named integer vector),
 #'   \code{sample_ids} (character), \code{tract_df} (data.frame sorted by
-#'   spos), \code{anc_hap0} (integer matrix: samples × tracts),
-#'   \code{anc_hap1} (integer matrix: samples × tracts).
+#'   spos), \code{anc_hap0} (integer matrix: samples x tracts),
+#'   \code{anc_hap1} (integer matrix: samples x tracts).
 #' @keywords internal
 .parse_msp <- function(msp_path, verbose = TRUE) {
   if (verbose) message("  Parsing MSP file: ", msp_path)
@@ -437,7 +439,7 @@ read_bed_file <- function(bed, bim, fam) {
 
 #' Parse phased GT matrix into haplotype integer matrices (vectorised)
 #'
-#' @param gt_mat Character matrix (variants × samples).
+#' @param gt_mat Character matrix (variants x samples).
 #' @param n_variants Number of variants.
 #' @param n_samples Number of samples.
 #' @param sample_order Column names for output matrices.
@@ -501,8 +503,8 @@ read_bed_file <- function(bed, bim, fam) {
 #' @keywords internal
 .resolve_vcf_contig <- function(vcf_path, chrom) {
   header <- tryCatch(
-    system(paste0("bcftools view -h ", shQuote(vcf_path)),
-           intern = TRUE, ignore.stderr = TRUE),
+    system2("bcftools", c("view", "-h", shQuote(vcf_path)),
+            stdout = TRUE, stderr = FALSE),
     error = function(e) character(0))
   contig_ids <- sub("^##contig=<ID=([^,>]+).*$", "\\1",
                      grep("^##contig=<ID=", header, value = TRUE))
@@ -512,6 +514,146 @@ read_bed_file <- function(bed, bim, fam) {
   match_id    <- candidates[candidates %in% contig_ids]
   if (length(match_id) == 0) return(NULL)
   match_id[1]
+}
+
+#' Choose the VCF-reading backend
+#'
+#' \code{"bcftools"} when the \code{bcftools} binary is on \code{PATH}
+#' (fastest; also reads BCF), otherwise \code{"seqarray"} (no external
+#' binary). \code{options(lantern.vcf_reader = "bcftools"/"seqarray")}
+#' forces one; the default \code{"auto"} picks as above.
+#'
+#' @keywords internal
+.vcf_reader <- function() {
+  reader <- match.arg(getOption("lantern.vcf_reader", "auto"),
+                      c("auto", "bcftools", "seqarray"))
+  if (reader == "auto")
+    reader <- if (nzchar(Sys.which("bcftools"))) "bcftools" else "seqarray"
+  reader
+}
+
+#' Read the sample IDs of a VCF
+#'
+#' @keywords internal
+.vcf_sample_ids <- function(vcf_path, reader) {
+  if (reader == "seqarray") return(SeqArray::seqVCF_SampID(vcf_path))
+  res <- system2("bcftools", c("query", "-l", shQuote(vcf_path)),
+                 stdout = TRUE, stderr = FALSE)
+  if (length(res) == 0) stop("bcftools query -l returned nothing")
+  res
+}
+
+#' Read variant sites and GT strings from a VCF
+#'
+#' Both backends return the same thing: \code{chrom}, \code{pos},
+#' \code{ref}, \code{alt} vectors and \code{gt}, a character matrix
+#' (variants x all VCF samples) of GT strings exactly as
+#' \code{bcftools query -f '[\%GT]'} prints them (e.g. \code{"0|1"},
+#' \code{"./."}), so everything downstream is backend-agnostic.
+#' \code{chrom} restricts the read where the backend can do so cheaply;
+#' callers still filter by chromosome afterward.
+#'
+#' @keywords internal
+.vcf_read_gt <- function(vcf_path, chrom, reader, verbose = TRUE) {
+  if (reader == "seqarray")
+    return(.vcf_read_gt_seqarray(vcf_path, chrom, verbose = verbose))
+
+  target_arg <- character(0)
+  if (!is.null(chrom)) {
+    resolved <- .resolve_vcf_contig(vcf_path, chrom)
+    if (!is.null(resolved)) {
+      target_arg <- c("-t", shQuote(resolved))
+      if (verbose) message("  Restricting bcftools query to contig '", resolved,
+                           "' (other chromosomes are never read into R)")
+    } else if (verbose) {
+      message("  Could not match chromosome '", chrom, "' against the VCF's ",
+              "##contig header; querying all variants and filtering ",
+              "afterward instead (slower, more memory)")
+    }
+  }
+  args_gt <- c("query", target_arg,
+               "-f", shQuote("%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\n"),
+               shQuote(vcf_path))
+  gt_output <- tryCatch(
+    system2("bcftools", args_gt, stdout = TRUE, stderr = FALSE),
+    error = function(e) stop("bcftools query failed: ", e$message))
+  if (length(gt_output) == 0) stop("bcftools query returned no variants")
+  if (verbose) message("  ", length(gt_output), " variant lines read")
+
+  tmp_gt <- tempfile(fileext = ".tsv")
+  on.exit(unlink(tmp_gt), add = TRUE)
+  writeLines(gt_output, tmp_gt)
+  gt_dt <- data.table::fread(tmp_gt, header = FALSE, sep = "\t")
+
+  list(chrom = gt_dt[[1]],
+       pos   = as.integer(gt_dt[[2]]),
+       ref   = as.character(gt_dt[[3]]),
+       alt   = as.character(gt_dt[[4]]),
+       gt    = as.matrix(gt_dt[, 5:ncol(gt_dt), drop = FALSE]))
+}
+
+#' @rdname dot-vcf_read_gt
+#' @keywords internal
+.vcf_read_gt_seqarray <- function(vcf_path, chrom, verbose = TRUE) {
+  if (grepl("\\.bcf$", vcf_path, ignore.case = TRUE))
+    stop("Reading BCF input requires bcftools on PATH; ",
+         "convert it to VCF (.vcf / .vcf.gz) or install bcftools")
+  if (verbose) message("  bcftools not found; reading the VCF via SeqArray")
+
+  gds_tmp <- tempfile(fileext = ".gds")
+  on.exit(unlink(gds_tmp), add = TRUE)
+  # GT only; keep chromosome names verbatim (SeqArray strips "chr" by
+  # default, bcftools does not) so variant_info matches the bcftools path.
+  SeqArray::seqVCF2GDS(vcf_path, gds_tmp,
+                       info.import = character(0), fmt.import = character(0),
+                       ignore.chr.prefix = "", storage.option = "LZ4_RA.fast",
+                       optimize = FALSE, digest = FALSE, verbose = FALSE)
+  gds <- SeqArray::seqOpen(gds_tmp)
+  on.exit(SeqArray::seqClose(gds), add = TRUE, after = FALSE)
+
+  if (!is.null(chrom)) {
+    keep <- sub("^chr", "", SeqArray::seqGetData(gds, "chromosome")) ==
+      sub("^chr", "", chrom)
+    if (!any(keep)) stop("No variants on chromosome ", chrom)
+    SeqArray::seqSetFilter(gds, variant.sel = keep, verbose = FALSE)
+  }
+
+  sample_ids <- SeqArray::seqGetData(gds, "sample.id")
+  n_samples  <- length(sample_ids)
+  vcf_chrom  <- SeqArray::seqGetData(gds, "chromosome")
+  n_variants <- length(vcf_chrom)
+  if (n_variants == 0) stop("VCF contains no variants")
+  if (verbose) message("  ", n_variants, " variants read")
+
+  alt <- SeqArray::seqGetData(gds, "$alt")
+  alt[alt == ""] <- "."   # bcftools prints a missing ALT as "."
+
+  # genotype: ploidy x sample x variant allele indices (NA = missing);
+  # phase: sample x variant, 1 = phased ("|"), 0 = unphased ("/").
+  geno  <- SeqArray::seqGetData(gds, "genotype")
+  geno  <- array(geno, dim = c(length(geno) / (n_samples * n_variants),
+                               n_samples, n_variants))
+  allele_str <- function(a) {
+    s <- as.character(a)
+    s[is.na(a)] <- "."
+    s
+  }
+  if (dim(geno)[1] == 1) {
+    gt <- allele_str(geno[1, , ])
+  } else {
+    phase <- SeqArray::seqGetData(gds, "phase")
+    gt <- paste0(allele_str(geno[1, , ]),
+                 ifelse(as.vector(phase) == 1, "|", "/"),
+                 allele_str(geno[2, , ]))
+  }
+  gt <- t(matrix(gt, nrow = n_samples, ncol = n_variants))
+  colnames(gt) <- sample_ids
+
+  list(chrom = vcf_chrom,
+       pos   = SeqArray::seqGetData(gds, "position"),
+       ref   = SeqArray::seqGetData(gds, "$ref"),
+       alt   = alt,
+       gt    = gt)
 }
 
 #' Parse an MSP file and a phased VCF into haplotype/ancestry matrices
@@ -551,16 +693,14 @@ read_bed_file <- function(bed, bim, fam) {
   n_tracts <- nrow(tract_df)
   if (verbose) message("  MSP samples: ", length(msp_samples),
                        "  Tracts: ", n_tracts,
-                       if (!is.null(chrom)) paste0(" (chr ", chrom, " only)") else "")
+                       if (!is.null(chrom)) c(" (chr ", chrom, " only)"))
 
   # ---- Step 2: VCF sample IDs ----
   if (verbose) message("\nStep 2: Querying VCF sample IDs...")
-  vcf_samples <- tryCatch({
-    res <- system(paste0("bcftools query -l ", shQuote(vcf_path)),
-                  intern = TRUE, ignore.stderr = TRUE)
-    if (length(res) == 0) stop("bcftools query -l returned nothing")
-    res
-  }, error = function(e) stop("Could not read VCF sample IDs: ", e$message))
+  reader <- .vcf_reader()
+  vcf_samples <- tryCatch(
+    .vcf_sample_ids(vcf_path, reader),
+    error = function(e) stop("Could not read VCF sample IDs: ", e$message))
   if (verbose) message("  VCF samples: ", length(vcf_samples))
 
   # ---- Step 3: Intersect samples ----
@@ -577,38 +717,11 @@ read_bed_file <- function(bed, bim, fam) {
 
   # ---- Step 4: Parse VCF GT ----
   if (verbose) message("\nStep 4: Parsing VCF genotypes...")
-  target_arg <- ""
-  if (!is.null(chrom)) {
-    resolved <- .resolve_vcf_contig(vcf_path, chrom)
-    if (!is.null(resolved)) {
-      target_arg <- paste0("-t ", shQuote(resolved), " ")
-      if (verbose) message("  Restricting bcftools query to contig '", resolved,
-                           "' (other chromosomes are never read into R)")
-    } else if (verbose) {
-      message("  Could not match chromosome '", chrom, "' against the VCF's ",
-              "##contig header; querying all variants and filtering ",
-              "afterward instead (slower, more memory)")
-    }
-  }
-  cmd_gt <- paste0(
-    "bcftools query ", target_arg,
-    "-f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%GT]\\n' ",
-    shQuote(vcf_path))
-  gt_output <- tryCatch(
-    system(cmd_gt, intern = TRUE, ignore.stderr = TRUE),
-    error = function(e) stop("bcftools query failed: ", e$message))
-  if (length(gt_output) == 0) stop("bcftools query returned no variants")
-  if (verbose) message("  ", length(gt_output), " variant lines read")
-
-  tmp_gt <- tempfile(fileext = ".tsv")
-  on.exit(unlink(tmp_gt), add = TRUE)
-  writeLines(gt_output, tmp_gt)
-  gt_dt <- data.table::fread(tmp_gt, header = FALSE, sep = "\t")
-
-  vcf_chrom <- gt_dt[[1]]
-  vcf_pos   <- as.integer(gt_dt[[2]])
-  vcf_ref   <- as.character(gt_dt[[3]])
-  vcf_alt   <- as.character(gt_dt[[4]])
+  vcf <- .vcf_read_gt(vcf_path, chrom, reader, verbose = verbose)
+  vcf_chrom <- vcf$chrom
+  vcf_pos   <- vcf$pos
+  vcf_ref   <- vcf$ref
+  vcf_alt   <- vcf$alt
 
   is_biallelic <- !grepl(",", vcf_alt, fixed = TRUE)
   n_multi <- sum(!is_biallelic)
@@ -616,13 +729,11 @@ read_bed_file <- function(bed, bim, fam) {
     if (verbose) message("  Skipping ", n_multi, " multiallelic variants")
     vcf_chrom <- vcf_chrom[is_biallelic]; vcf_pos <- vcf_pos[is_biallelic]
     vcf_ref   <- vcf_ref[is_biallelic];   vcf_alt <- vcf_alt[is_biallelic]
-    gt_dt     <- gt_dt[is_biallelic]
   }
   n_variants <- length(vcf_pos)
 
   sample_idx <- match(common_samples, vcf_samples)
-  gt_mat_raw <- as.matrix(gt_dt[, 5:ncol(gt_dt), drop = FALSE])
-  gt_mat     <- gt_mat_raw[, sample_idx, drop = FALSE]
+  gt_mat     <- vcf$gt[is_biallelic, sample_idx, drop = FALSE]
 
   gt_parsed  <- .parse_phased_gt_matrix(gt_mat, n_variants,
                                          length(common_samples),
@@ -732,13 +843,16 @@ read_bed_file <- function(bed, bim, fam) {
 #' then to \code{\link{ancestry_smmat}} (Step 3) to run SMMAT + Cauchy
 #' combination.
 #'
-#' @param vcf_path Path to phased VCF/BCF file (plain or gzipped).
-#'   \code{bcftools} must be in \code{PATH}.
+#' @param vcf_path Path to phased VCF/BCF file (plain or gzipped). Read
+#'   with \code{bcftools} if it is on \code{PATH} (fastest; required for
+#'   BCF), otherwise with \pkg{SeqArray}. Set
+#'   \code{options(lantern.vcf_reader = "bcftools")} or \code{"seqarray"}
+#'   to force one.
 #' @param msp_path Path to RFMix MSP file (plain text or gzipped TSV).
 #' @param mode Split algorithm: \code{"dosage"} (proportional p1/p2 split
 #'   via \code{\link{split_diploid_multi}}, unphased) or \code{"haplotype"}
 #'   (deterministic per-haplotype split via
-#'   \code{\link{split_haplotype_multi}}, phased). Either/or — call
+#'   \code{\link{split_haplotype_multi}}, phased). Either/or -- call
 #'   \code{ancestry_split()} twice if both are needed.
 #' @param chrom Chromosome to process (e.g., \code{"chr19"} or \code{"19"}).
 #'   If \code{NULL}, all chromosomes present in the VCF are used. When
@@ -778,12 +892,13 @@ read_bed_file <- function(bed, bim, fam) {
 #' @seealso \code{\link{write_ancestry_gds}}, \code{\link{ancestry_smmat}}
 #'
 #' @examples
-#' \dontrun{
-#' split <- ancestry_split("cohort.phased.bcf", "cohort.msp.tsv.gz",
-#'                          mode = "dosage", chrom = "chr19")
-#' split$AFR   # African dosage matrix
-#' split$EUR   # European dosage matrix
-#' }
+#' vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+#' msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+#' split <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
+#'                         verbose = FALSE)
+#' split$AFR[1:3, 1:5]   # African dosages (variants x samples)
+#' split$EUR[1:3, 1:5]   # European dosages
+#' head(split$variant_info)
 #'
 #' @export
 ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
@@ -861,9 +976,9 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
                           ifelse(.assign_arm(variant_info$chrom, variant_info$pos) == 0L, ".p", ".q"))
     arm_id <- match(variant_key, rownames(gla_combined)) - 1L   # 0-based for C
     if (anyNA(arm_id))
-      stop("Internal error: ", sum(is.na(arm_id)), " variant(s) have no matching ",
-           "arm/GLA entry (chrom+arm not found in gla_combined) -- this should be ",
-           "unreachable given .parse_vcf_msp_common()'s tract filtering; please report.")
+      stop(sum(is.na(arm_id)), " variant(s) have no matching arm/GLA entry ",
+           "(chrom+arm not found in gla_combined). This should be unreachable ",
+           "given .parse_vcf_msp_common()'s tract filtering; please report it.")
   }
 
   # ---- Split by ancestry ----
@@ -981,12 +1096,11 @@ ancestry_split <- function(vcf_path, msp_path, mode = c("dosage", "haplotype"),
 #' # Only sample_A and sample_B are kept (common to both)
 #' # Only chr1:100 and chr1:200 that overlap regions are kept
 #'
-#' \dontrun{
 #' # Shortcut: build matrices directly from VCF + MSP
-#' result <- ancestry_split_dosage(vcf_path = "data/chr19.phased.bcf",
-#'                                  msp_path = "data/chr19.msp.tsv.gz",
-#'                                  chrom    = "chr19")
-#' }
+#' vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+#' msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+#' result <- ancestry_split_dosage(vcf_path = vcf, msp_path = msp,
+#'                                 chrom = "chr19", verbose = FALSE)
 #'
 #' @export
 ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
@@ -1049,8 +1163,8 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
       warning("Matrices have different dimensions (GT: ", n_gt, " cols, PT: ", n_pt,
               " rows). Using first ", min_n, " samples.")
     }
-    gt_sample_names <- paste0("sample_", 1:min_n)
-    pt_sample_names <- paste0("sample_", 1:min_n)
+    gt_sample_names <- paste0("sample_", seq_len(min_n))
+    pt_sample_names <- paste0("sample_", seq_len(min_n))
     colnames(gt_matrix) <- gt_sample_names
     rownames(pt_matrix) <- pt_sample_names
   }
@@ -1098,8 +1212,8 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
       warning("Matrices have different dimensions (GT: ", n_gt, " rows, PT: ",
               n_pt, " cols). Using first ", min_n, " variants.")
     }
-    gt_var_names <- paste0("var_", 1:min_n)
-    pt_region_names <- paste0("var_", 1:min_n)
+    gt_var_names <- paste0("var_", seq_len(min_n))
+    pt_region_names <- paste0("var_", seq_len(min_n))
     rownames(gt_matrix) <- gt_var_names
     colnames(pt_matrix) <- pt_region_names
   }
@@ -1179,7 +1293,7 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
       min_n <- min(length(gt_var_names), length(pt_region_names))
       rownames(gt_matrix) <- paste0("var_", seq_len(nrow(gt_matrix)))
       colnames(pt_matrix) <- paste0("region_", seq_len(ncol(pt_matrix)))
-      common_vars <- paste0("shared_", 1:min_n)
+      common_vars <- paste0("shared_", seq_len(min_n))
     }
   }
 
@@ -1319,8 +1433,11 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
 #' separate, call \code{ancestry_split()} and \code{write_ancestry_gds()}
 #' directly.
 #'
-#' @param vcf_path Path to phased VCF/BCF file (plain or gzipped).
-#'   \code{bcftools} must be in \code{PATH}.
+#' @param vcf_path Path to phased VCF/BCF file (plain or gzipped). Read
+#'   with \code{bcftools} if it is on \code{PATH} (fastest; required for
+#'   BCF), otherwise with \pkg{SeqArray}. Set
+#'   \code{options(lantern.vcf_reader = "bcftools")} or \code{"seqarray"}
+#'   to force one.
 #' @param msp_path Path to RFMix MSP file (plain text or gzipped TSV).
 #' @param out_path Output directory for GDS and cache files.
 #' @param chrom Chromosome to process (e.g., \code{"chr19"} or \code{"19"}).
@@ -1330,8 +1447,8 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
 #' @param verbose Print step-by-step progress messages.
 #'
 #' @return Invisibly, a list with elements:
-#'   \item{african}{Numeric matrix (variants × samples) of African dosages.}
-#'   \item{european}{Numeric matrix (variants × samples) of European dosages.}
+#'   \item{african}{Numeric matrix (variants x samples) of African dosages.}
+#'   \item{european}{Numeric matrix (variants x samples) of European dosages.}
 #'   \item{variant_info}{data.frame with columns chrom, pos, ref, alt.}
 #'   \item{sample_ids}{Character vector of common sample IDs.}
 #'   \item{tract_info}{data.frame of ancestry tracts from the MSP file.}
@@ -1340,16 +1457,14 @@ ancestry_split_dosage <- function(gt_matrix = NULL, pt_matrix = NULL,
 #'     \code{african_gds}/\code{european_gds} paths.}
 #'
 #' @examples
-#' \dontrun{
-#' result <- ancestry_split_phased(
-#'   vcf_path = "data/chr19.phased.bcf",
-#'   msp_path = "data/chr19.msp.tsv.gz",
-#'   out_path = "output/",
-#'   chrom    = "chr19",
-#'   write_vcf = TRUE
-#' )
+#' vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+#' msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+#' out_dir <- tempfile()
+#' result <- ancestry_split_phased(vcf, msp, out_path = out_dir,
+#'                                 chrom = "chr19", write_vcf = FALSE,
+#'                                 verbose = FALSE)
 #' head(result$variant_info)
-#' }
+#' unlink(out_dir, recursive = TRUE)
 #'
 #' @export
 ancestry_split_phased <- function(vcf_path, msp_path, out_path,

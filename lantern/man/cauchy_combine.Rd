@@ -41,7 +41,7 @@ cauchy_combine(c(0.01, 0.04), weights = c(2, 1))
 Liu, Y. and Xie, J. (2020). Cauchy Combination Test: A Powerful Test With
 Analytic p-Value Calculation Under Arbitrary Dependency Structures.
 \emph{J. Am. Stat. Assoc.} \strong{115}(529), 393--402.
-\doi{10.1080/01621459.2019.1672715}
+\doi{10.1080/01621459.2018.1554485}
 }
 \seealso{
 \code{\link{write_dosage_gds}}, \code{\link{ancestry_split}},

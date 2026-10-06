@@ -33,10 +33,14 @@ GDS paths to pass to \code{\link{ancestry_smmat}} (Step 3); it's exported
 mainly for standalone use (e.g. caching GDS files between SLURM jobs).
 }
 \examples{
-\dontrun{
-split <- ancestry_split("cohort.bcf", "cohort.msp.tsv.gz", mode = "dosage")
-gds   <- write_ancestry_gds(split, "out/")
-}
+vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+split <- ancestry_split(vcf, msp, mode = "dosage", chrom = "chr19",
+                        verbose = FALSE)
+out_dir <- tempfile()
+gds <- write_ancestry_gds(split, out_dir, verbose = FALSE)
+gds   # one GDS file per population
+unlink(out_dir, recursive = TRUE)
 
 }
 \seealso{

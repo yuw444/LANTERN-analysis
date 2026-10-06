@@ -29,11 +29,13 @@ The resulting GDS can be passed directly to \code{GMMAT::SMMAT()} via the
 \code{gds.fn} argument with \code{is.dosage = TRUE}.
 }
 \examples{
-\dontrun{
-split <- ancestry_split("cohort.bcf", "cohort.msp.tsv", mode = "haplotype")
-write_dosage_gds(split$AFR, split$variant_info, split$sample_ids, "afr_phased.gds")
-write_dosage_gds(split$EUR, split$variant_info, split$sample_ids, "eur_phased.gds")
-}
+vcf <- system.file("extdata", "toy.vcf.gz", package = "lantern")
+msp <- system.file("extdata", "toy.msp.tsv", package = "lantern")
+split <- ancestry_split(vcf, msp, mode = "haplotype", chrom = "chr19",
+                        verbose = FALSE)
+afr_gds <- tempfile(fileext = ".gds")
+write_dosage_gds(split$AFR, split$variant_info, split$sample_ids, afr_gds)
+unlink(afr_gds)
 
 }
 \seealso{

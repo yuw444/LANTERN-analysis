@@ -26,7 +26,7 @@ ancestry_smmat(
 }
 \arguments{
 \item{gds_paths}{Named list/vector of GDS file paths, one per ancestry
-population, e.g. \code{c(AFR = "afr.gds", EUR = "eur.gds")} — as
+population, e.g. \code{c(AFR = "afr.gds", EUR = "eur.gds")} -- as
 returned by \code{\link{write_ancestry_gds}}. Any K >= 1 populations
 are supported; add an extra named entry (e.g. \code{OBSERVED = ...})
 to include an additional (e.g. non-ancestry-split) GDS in the same
@@ -44,12 +44,12 @@ with row/column names equal to sample IDs.}
 \code{GMMAT::SMMAT()} (no header; columns gene, chr, pos, ref, alt,
 weight), or a data.frame/matrix with those same six columns. Either way,
 it is read, has any leading \code{"chr"} stripped from the chr column
-(matching \code{SeqArray::seqVCF2GDS()}'s convention — see the "chr
+(matching \code{SeqArray::seqVCF2GDS()}'s convention -- see the "chr
 column" note below), and written to a fresh temporary file that is
 deleted with \code{unlink()} when \code{ancestry_smmat()} returns; the
 caller's own path/data.frame is never read-modified or deleted, and can
 safely be reused across repeated calls (e.g. one call per phenotype).
-\strong{chr column}: pass either \code{"19"} or \code{"chr19"} —
+\strong{chr column}: pass either \code{"19"} or \code{"chr19"} --
 normalized automatically. Without this, a mismatch between the group
 file's chr convention and the GDS's (always bare, no \code{"chr"}
 prefix) would silently drop every affected variant, and the whole gene
@@ -77,7 +77,7 @@ default \code{tests = "E"}; use \code{"O.pval"}/\code{"S.pval"}/
 \code{"B.pval"} if you pass a different \code{tests} via \code{...}).}
 
 \item{MAF.range, miss.cutoff, method, ncores}{Passed straight through to
-\code{GMMAT::SMMAT()} — same names, same meaning as in a direct
+\code{GMMAT::SMMAT()} -- same names, same meaning as in a direct
 \code{SMMAT()} call.}
 
 \item{verbose}{Print this function's own step-by-step progress messages
@@ -86,7 +86,7 @@ default \code{tests = "E"}; use \code{"O.pval"}/\code{"S.pval"}/
 separately and stays at SMMAT's default (\code{FALSE}); every other
 \code{SMMAT()} argument is available via \code{...}.}
 
-\item{...}{Any other \code{GMMAT::SMMAT()} argument, forwarded as-is —
+\item{...}{Any other \code{GMMAT::SMMAT()} argument, forwarded as-is --
 for example \code{tests} (\code{"B"}, \code{"S"}, \code{"O"}, or the
 default \code{"E"}), \code{rho}, \code{MAF.weights.beta},
 \code{missing.method}, \code{use.minor.allele}, \code{auto.flip},
@@ -116,19 +116,28 @@ package's Step 3 entry point; it does not run Step 1/2 for you (SMMAT
 runs can take hours, so this is always an explicit, separate call).
 }
 \examples{
-\dontrun{
-split <- ancestry_split("cohort.bcf", "cohort.msp.tsv.gz", mode = "dosage")
-gds   <- write_ancestry_gds(split, "out/")
+if (requireNamespace("GMMAT", quietly = TRUE) &&
+    requireNamespace("SeqVarTools", quietly = TRUE)) {
+  ext <- system.file("extdata", package = "lantern")
+  split <- ancestry_split(file.path(ext, "toy.vcf.gz"),
+                          file.path(ext, "toy.msp.tsv"),
+                          mode = "dosage", chrom = "chr19", verbose = FALSE)
+  out_dir <- tempfile()
+  gds <- write_ancestry_gds(split, out_dir, verbose = FALSE)
 
-# gene_group_file can be a data.frame -- no tempfile/unlink needed
-genes <- data.frame(gene = "MYGENE", chr = "19", pos = split$variant_info$pos,
-                     ref = split$variant_info$ref, alt = split$variant_info$alt,
-                     weight = 1)
-out <- ancestry_smmat(gds, pheno, y ~ age + sex, kinship, genes,
-                       ancestry_counts = split$ancestry_counts,
-                       variant_info    = split$variant_info)
-head(out$results)         # per-gene p-values + Cauchy combination
-out$smmat_results$AFR     # raw GMMAT::SMMAT() output for AFR
+  pheno <- read.delim(file.path(ext, "toy_pheno.tsv"))
+  kinship <- diag(nrow(pheno))   # unrelated samples
+  dimnames(kinship) <- list(pheno$id, pheno$id)
+
+  # gene_group_file: a path, or a data.frame with the same six columns
+  out <- ancestry_smmat(gds, pheno, y ~ age + sex, kinship,
+                        file.path(ext, "toy_genes.tsv"),
+                        ancestry_counts = split$ancestry_counts,
+                        variant_info    = split$variant_info,
+                        verbose = FALSE)
+  out$results              # per-gene p-values + Cauchy combination
+  head(out$smmat_results$AFR)   # raw GMMAT::SMMAT() output for AFR
+  unlink(out_dir, recursive = TRUE)
 }
 
 }

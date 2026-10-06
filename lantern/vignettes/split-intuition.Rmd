@@ -31,7 +31,7 @@ with K-population inputs).
 * For the full split → GDS → association pipeline on real data, see
   `vignette("real-data-chr19")`.
 
----
+***
 
 # Part A: Two populations
 
@@ -160,7 +160,7 @@ The rule is simple: for each cell, hap0 contributes its allele to the AFR
 count if `anc_hap0 == 0`, to EUR if `anc_hap0 == 1`, and nothing
 otherwise.  Same for hap1 — no probability estimation, just bookkeeping.
 
----
+***
 
 # Part B: More than two populations
 
@@ -422,7 +422,7 @@ mixed_5 <- data.frame(
 cat("K=5 mixed_codes has", nrow(mixed_5), "rows (expected 5*4/2 =", 5 * 4 / 2, ")\n")
 ```
 
----
+***
 
 # Part C: GLA shrinkage — when ambiguous carriers dominate
 
@@ -541,3 +541,9 @@ split_flat <- ancestry_split(vcf_path, msp_path, mode = "dosage", use_gla = FALS
 See `?split_diploid_multi` and `?split_haplotype_multi` for full argument
 documentation. Next: `vignette("toy-vcf-msp-example")` builds these same
 inputs from real VCF + MSP file formats.
+
+## Session information
+
+```{r session}
+sessionInfo()
+```

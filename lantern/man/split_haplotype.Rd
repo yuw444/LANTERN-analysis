@@ -13,13 +13,13 @@ split_haplotype(
 )
 }
 \arguments{
-\item{gt_hap0}{Integer matrix (variants × samples) of haplotype-0 alleles (0/1).}
+\item{gt_hap0}{Integer matrix (variants x samples) of haplotype-0 alleles (0/1).}
 
-\item{gt_hap1}{Integer matrix (variants × samples) of haplotype-1 alleles (0/1).}
+\item{gt_hap1}{Integer matrix (variants x samples) of haplotype-1 alleles (0/1).}
 
-\item{anc_hap0}{Integer matrix (variants × samples) of haplotype-0 ancestry codes.}
+\item{anc_hap0}{Integer matrix (variants x samples) of haplotype-0 ancestry codes.}
 
-\item{anc_hap1}{Integer matrix (variants × samples) of haplotype-1 ancestry codes.}
+\item{anc_hap1}{Integer matrix (variants x samples) of haplotype-1 ancestry codes.}
 
 \item{pop_codes}{Named integer vector of length 2 giving the AFR and EUR
 ancestry codes as used in the MSP file.  Defaults to
@@ -27,8 +27,8 @@ ancestry codes as used in the MSP file.  Defaults to
 }
 \value{
 List with two numeric matrices:
-  \item{african}{African ancestry-specific dosage (variants × samples)}
-  \item{european}{European ancestry-specific dosage (variants × samples)}
+  \item{african}{African ancestry-specific dosage (variants x samples)}
+  \item{european}{European ancestry-specific dosage (variants x samples)}
 }
 \description{
 Split phased haplotypes deterministically into African and European

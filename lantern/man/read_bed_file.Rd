@@ -33,9 +33,11 @@ as \code{pt_matrix}/\code{ancestry} without \code{snpStats} as a
 dependency.
 }
 \examples{
-\dontrun{
-pt <- read_bed_file("ancestry.bed", "ancestry.bim", "ancestry.fam")
-}
+ext <- system.file("extdata", package = "lantern")
+pt <- read_bed_file(file.path(ext, "toy_ancestry.bed"),
+                    file.path(ext, "toy_ancestry.bim"),
+                    file.path(ext, "toy_ancestry.fam"))
+pt[, 1:6]   # ancestry tracts x samples, codes 1/2/3
 
 }
 \seealso{
