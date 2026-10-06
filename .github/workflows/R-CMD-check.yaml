@@ -52,7 +52,7 @@ jobs:
       # vignettes use.
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: .
+          working-directory: '.'
           extra-packages: |
             any::knitr
             any::rmarkdown
@@ -62,7 +62,7 @@ jobs:
       # error-on: '"error"' passes warnings but fails on errors.
       - uses: r-lib/actions/check-r-package@v2
         with:
-          working-directory: .
+          working-directory: '.'
           args: 'c("--no-manual", "--timings")'
           error-on: '"error"'
           upload-snapshots: true
