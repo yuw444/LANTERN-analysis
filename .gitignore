@@ -40,3 +40,6 @@ SMOKE/
 analysis/
 
 visual/
+# Nextflow run state (local only)
+.nextflow/
+.nextflow.log*
