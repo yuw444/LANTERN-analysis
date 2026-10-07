@@ -73,34 +73,41 @@ $$p_1 = \frac{2N_1 + N_2 + N_4}{D}, \qquad p_2 = \frac{N_4 + 2N_7 + N_8}{D}, \qq
 
 Special case: if the only alt carriers are AFR/EUR heterozygotes ($N_5 \ge 1$, all other $N = 0$), the formula above is undefined ($D = 0$).
 
-**GLA shrinkage.** The formula above only uses evidence *at this variant*:
-it estimates $p_1, p_2$ from unambiguous carriers, then applies that ratio
-to the ambiguous AFR/EUR hets ($N_5$). That's unreliable whenever $N_5$
-dominates the carrier count — not only in the pure singleton above ($D=0$),
-but also just short of it. For example, $N_5 = 10$ with only $N_7 = 1$ (one
-pure-EUR hom-alt) and everything else 0 gives $D = 2$, $p_1 = 0$, $p_2 = 1$
-— a fully confident call extrapolated from a single unambiguous carrier.
+**Shrinkage toward 1/2.** The formula above only uses evidence *at this
+variant*: it estimates $p_1, p_2$ from unambiguous carriers, then applies
+that ratio to the ambiguous AFR/EUR hets ($N_5$). That's unreliable whenever
+$N_5$ dominates the carrier count — not only in the pure singleton above
+($D=0$), but also just short of it. For example, $N_5 = 10$ with only
+$N_7 = 1$ (one pure-EUR hom-alt) and everything else 0 gives $D = 2$,
+$p_1 = 0$, $p_2 = 1$ — a fully confident call extrapolated from a single
+unambiguous carrier.
 
-`lantern::ancestry_split()` (default `use_gla = TRUE`) shrinks $p_1$ toward
-a per-chromosome-arm **global local ancestry (GLA)** proportion — computed
-directly from the RFMix tracts, not from genotypes — weighted by how much
+`lantern::ancestry_split()` shrinks $p_1$ toward $1/2$, weighted by how much
 of the variant's own evidence is ambiguous:
 
-$$w = \frac{N_5}{D+N_5}, \qquad p_1 \leftarrow (1-w) p_1 + w \cdot \mathrm{GLA}_{\mathrm{AFR}}[\mathrm{arm}]$$
+$$w = \frac{N_5}{D+N_5}, \qquad p_1 \leftarrow (1-w) p_1 + \frac{w}{2}, \qquad p_2 = 1 - p_1$$
 
 using $D$ from the raw formula above. Hom-alt carriers ($N_1, N_4, N_7$)
 count 2x toward this denominator, matching their 2x weight in $p_1$'s
 numerator, since each carries two alt alleles' worth of ancestry evidence
 versus one for a het or an ambiguous mixed het ($N_5$, which always carries
-exactly one, unresolved, allele).
+exactly one, unresolved, allele). In the example above, $w = 10/12$ and each
+ambiguous het gets $p_1 = 5/12$ instead of 0.
 
 $w = 0$ (unambiguous carriers dominate) reduces to the raw formula above;
-$w = 1$ (the pure singleton, $D=0$) falls back entirely to the arm's GLA
-proportion instead of a flat 0.5/0.5 coin flip — the old special case is
-just one end of this continuum. Pass `use_gla = FALSE` to reproduce the
-formula above exactly, including its flat singleton fallback. See the
-`lantern` package [README](lantern/README.md) and
-`vignette("split-intuition")` for the full derivation and worked examples.
+$w = 1$ (the pure singleton, $D=0$) gives exactly $0.5/0.5$ — the old
+special case is just one end of this continuum.
+
+*Why $1/2$?* A mixed-ancestry heterozygote carries exactly one AFR and one
+EUR haplotype at the site, so which one holds the allele depends on how
+common the allele is on AFR versus EUR haplotypes, not on how many AFR
+haplotypes the cohort has. An earlier version shrank toward the chromosome
+arm's global local ancestry (GLA, ~0.82 AFR in the chr19 cohort); in chr19
+simulations the true AFR share of mixed-het alleles was 0.50 at every allele
+count, and the $1/2$ target both assigned alleles more accurately and gave
+more power when the causal effect was on EUR alleles. See the `lantern`
+package [README](lantern/README.md) and `vignette("split-intuition")` for
+worked examples.
 
 ---
 
@@ -130,11 +137,11 @@ $$p_1 = \frac{2N_1 + N_2 + N_7 + N_9}{D}, \quad p_2 = \frac{2N_3 + N_4 + N_7 + N
 
 By construction $p_1 + p_2 + p_3 = 1$.  Each mixed hom-alt individual (e.g. $N_7$, AFR/EUR 1/1) contributes one alt allele to each parent population's numerator and two to the shared denominator $D$.  Ambiguous hets in each mixed pair are then split by the **pairwise ratio** of the two parent populations' proportions.
 
-**GLA shrinkage.** Each mixed pair's ambiguous heterozygote count ($N_8$ for AFR/EUR, $N_{10}$ for AFR/NAT, $N_{12}$ for EUR/NAT) is shrunk the same way as the 2-ancestry case, toward the chromosome arm's GLA proportion conditioned on just that pair. For the AFR/EUR pair:
+**Shrinkage toward 1/2.** Each mixed pair's ambiguous heterozygote count ($N_8$ for AFR/EUR, $N_{10}$ for AFR/NAT, $N_{12}$ for EUR/NAT) is shrunk the same way as the 2-ancestry case, toward an even split within that pair. For the AFR/EUR pair:
 
-$$T = D + N_8 + N_{10} + N_{12}, \qquad w_{12} = \frac{N_8}{T}, \qquad \mathrm{GLA}_{AFR\mid 12}[\mathrm{arm}] = \frac{\mathrm{GLA}_{AFR}[\mathrm{arm}]}{\mathrm{GLA}_{AFR}[\mathrm{arm}] + \mathrm{GLA}_{EUR}[\mathrm{arm}]} \quad (=0.5 \text{ if both are } 0), \qquad \frac{p_1}{p_1+p_2} \leftarrow (1-w_{12})\frac{p_1}{p_1+p_2} + w_{12}\cdot \mathrm{GLA}_{AFR\mid 12}[\mathrm{arm}]$$
+$$T = D + N_8 + N_{10} + N_{12}, \qquad w_{12} = \frac{N_8}{T}, \qquad \frac{p_1}{p_1+p_2} \leftarrow (1-w_{12})\frac{p_1}{p_1+p_2} + \frac{w_{12}}{2}$$
 
-using $D$ from the raw formula above; $T$ (this variant's total allele-weighted confidence) adds every mixed pair's own ambiguous-het count on top — not just pair $12$'s — matching $D$'s existing 2x weighting of hom-alt carriers. $N_{10}$ (AFR/NAT) and $N_{12}$ (EUR/NAT) shrink identically off the same shared $T$ ($w_{9,10}=N_{10}/T$, $w_{11,12}=N_{12}/T$), each toward its own pair's GLA-conditioned target. $T$ is shared across all three pairs, so $w_{12}=1$ requires not just $D=0$ but also $N_{10}=N_{12}=0$ — i.e. this variant's *only* alt-carrying evidence, of any pair or population, is AFR/EUR ambiguous hets; that reduces exactly to the 2-ancestry pure-singleton case, since with K=2 there's only one pair to begin with. `use_gla = FALSE` reproduces the raw pairwise ratio exactly.
+using $D$ from the raw formula above; $T$ (this variant's total allele-weighted confidence) adds every mixed pair's own ambiguous-het count on top — not just pair $12$'s — matching $D$'s existing 2x weighting of hom-alt carriers. $N_{10}$ (AFR/NAT) and $N_{12}$ (EUR/NAT) shrink identically off the same shared $T$ ($w_{9,10}=N_{10}/T$, $w_{11,12}=N_{12}/T$), each toward $1/2$ within its own pair, so an ambiguous AFR/EUR het never receives NAT dosage. $T$ is shared across all three pairs, so $w_{12}=1$ requires not just $D=0$ but also $N_{10}=N_{12}=0$ — i.e. this variant's *only* alt-carrying evidence, of any pair or population, is AFR/EUR ambiguous hets; that reduces exactly to the 2-ancestry pure-singleton case.
 
 ---
 
@@ -177,11 +184,11 @@ It follows that $\sum_{k=1}^{K} p_k = 1$.
 
 **Singleton special case:** if the only alt carriers in a mixed pair $(i,j)$ are heterozygotes and all pure-ancestry and hom-alt counts are zero, $D=0$ for that pair and the raw ratio is undefined.
 
-**GLA shrinkage (general $K$).** The formula above generalises **per pair**, not per population: each mixed pair $(i,j)$ gets its own ambiguous-fraction weight and its own shrinkage target, the arm's GLA proportions conditioned on just that pair.
+**Shrinkage toward 1/2 (general $K$).** The formula above generalises **per pair**, not per population: each mixed pair $(i,j)$ gets its own ambiguous-fraction weight, and is shrunk toward an even split within the pair.
 
-$$T = D + \sum_{i'<j'} N_{i'j'}^{(1)}, \qquad w_{ij} = \frac{N_{ij}^{(1)}}{T}, \qquad \mathrm{GLA}_{i\mid ij}[\mathrm{arm}] = \frac{\mathrm{GLA}_i[\mathrm{arm}]}{\mathrm{GLA}_i[\mathrm{arm}] + \mathrm{GLA}_j[\mathrm{arm}]} \quad (=0.5 \text{ if both are } 0), \qquad \frac{p_i}{p_i+p_j} \leftarrow (1-w_{ij})\frac{p_i}{p_i+p_j} + w_{ij}\cdot \mathrm{GLA}_{i\mid ij}[\mathrm{arm}]$$
+$$T = D + \sum_{i'<j'} N_{i'j'}^{(1)}, \qquad w_{ij} = \frac{N_{ij}^{(1)}}{T}, \qquad \frac{p_i}{p_i+p_j} \leftarrow (1-w_{ij})\frac{p_i}{p_i+p_j} + \frac{w_{ij}}{2}$$
 
-using $D$ from the denominator formula above and the same $p_i$ from the population-proportion formula (the full-variant estimate, not a pair-restricted recount) — so the raw ratio is defined even when pair $(i,j)$ itself has no unambiguous hom-alt carriers, as long as $i$ and $j$ each have unambiguous evidence elsewhere in the variant; it falls back to $\mathrm{GLA}_{i\mid ij}$ only if $p_i+p_j=0$ too. $T$ (this variant's total allele-weighted confidence) is shared across *every* pair, not recomputed per pair: it sums $D$ (which already counts hom-alt carriers, pure or mixed, 2x) plus *all* pairs' ambiguous-het counts, not just $(i,j)$'s. $w_{ij}=0$ recovers the raw pairwise ratio; $w_{ij}=1$ (this variant's only alt-carrying evidence, of any pair or population, is pair $(i,j)$'s own ambiguous hets — the singleton case above) falls back entirely to $\mathrm{GLA}_{i\mid ij}[\mathrm{arm}]$ instead of a flat 0.5/0.5. `use_gla = FALSE` reproduces the raw per-pair ratio exactly, flat-0.5 fallback included.
+using $D$ from the denominator formula above and the same $p_i$ from the population-proportion formula (the full-variant estimate, not a pair-restricted recount) — so the raw ratio is defined even when pair $(i,j)$ itself has no unambiguous hom-alt carriers, as long as $i$ and $j$ each have unambiguous evidence elsewhere in the variant; if $p_i+p_j=0$ too, the pair's split is $1/2$. $T$ (this variant's total allele-weighted confidence) is shared across *every* pair, not recomputed per pair: it sums $D$ (which already counts hom-alt carriers, pure or mixed, 2x) plus *all* pairs' ambiguous-het counts, not just $(i,j)$'s. $w_{ij}=0$ recovers the raw pairwise ratio; $w_{ij}=1$ (this variant's only alt-carrying evidence, of any pair or population, is pair $(i,j)$'s own ambiguous hets — the singleton case above) gives exactly $1/2 : 1/2$.
 
 **Number of ancestry types by K:**
 
@@ -344,7 +351,6 @@ Rscript src/step1_vcf_split_by_ancestry.R \
 | `--out_path` | yes | Output directory, created if missing. |
 | `--chr_id` | yes | Chromosome to process, e.g. `22` or `chr22` — must identify the same chromosome in both `--vcf_path` and `--msp_path` (a `chr` prefix mismatch between the two is handled automatically). |
 | `--mode` | no (default `dosage`) | `dosage` = proportional p1/p2 split (unphased-friendly) or `haplotype` = deterministic per-haplotype split (needs a truly phased VCF). See `vignette("split-intuition")` for the difference. |
-| `--use_gla` | no (default `TRUE`) | `--mode dosage` only. Apply GLA shrinkage (see "GLA shrinkage" above) to ambiguous mixed-ancestry heterozygotes. `FALSE` reproduces the original pre-shrinkage p1/p2 estimator exactly, flat singleton fallback included. Ignored for `--mode haplotype`. |
 
 **Multi-chromosome input**: `--vcf_path`/`--msp_path` don't need to be
 pre-split per chromosome — `--chr_id` selects one chromosome out of a
@@ -360,7 +366,7 @@ rather than combining chromosomes into a single call.
 | File | Contents |
 |------|----------|
 | `<POP>.gds` (one per population named in the MSP header, e.g. `AFR.gds`, `EUR.gds`) | Ancestry-specific dosage GDS, ready for `GMMAT::SMMAT()` (`is.dosage = TRUE`) |
-| `split_meta_chr<chr_id>.rds` | `list(gds_paths, variant_info, ancestry_counts, sample_ids, mode, use_gla, chr_id)` — bundles the GDS paths above plus per-variant ancestry counts. This whole file is Step 2's `--split_meta` input. |
+| `split_meta_chr<chr_id>.rds` | `list(gds_paths, variant_info, ancestry_counts, sample_ids, mode, shrink_target, lantern_version, chr_id)` — bundles the GDS paths above plus per-variant ancestry counts. This whole file is Step 2's `--split_meta` input. |
 
 #### Step 2 — ancestry-stratified association testing
 
