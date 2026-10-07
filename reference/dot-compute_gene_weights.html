@@ -4,7 +4,7 @@ median per-gene ancestry count logic to K populations (that
 functionality now lives here, fed by ancestry_counts/
 variant_info from Step 1): for each gene in gene_group_file,
 takes the median (across the gene's variants) of the per-variant pure-
-ancestry sample counts in ancestry_counts."><meta property="og:image" content="https://yuw444.github.io/LANTERN/logo.png"><!-- mathjax --><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js" integrity="sha256-nvJJv9wWKEm88qvoQl9ekL2J+k/RWIsaSScxxlsrv8k=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/config/TeX-AMS-MML_HTMLorMML.js" integrity="sha256-84DKXVJXs0/F8OTMzX4UR909+jtl4G7SPypPavF+GfA=" crossorigin="anonymous"></script><!--[if lt IE 9]>
+ancestry sample counts in ancestry_counts."><meta property="og:image" content="https://yuw444.github.io/lantern/logo.png"><!-- mathjax --><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js" integrity="sha256-nvJJv9wWKEm88qvoQl9ekL2J+k/RWIsaSScxxlsrv8k=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/config/TeX-AMS-MML_HTMLorMML.js" integrity="sha256-84DKXVJXs0/F8OTMzX4UR909+jtl4G7SPypPavF+GfA=" crossorigin="anonymous"></script><!--[if lt IE 9]>
 <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
 <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
 <![endif]--></head><body data-spy="scroll" data-target="#toc">
@@ -22,12 +22,15 @@ ancestry sample counts in ancestry_counts."><meta property="og:image" content="h
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.1</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
       </span>
     </div>
 
     <div id="navbar" class="navbar-collapse collapse">
-      <ul class="nav navbar-nav"><li class="dropdown">
+      <ul class="nav navbar-nav"><li>
+  <a href="../articles/lantern.html">Get started</a>
+</li>
+<li class="dropdown">
   <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
     Articles
 
@@ -49,7 +52,7 @@ ancestry sample counts in ancestry_counts."><meta property="og:image" content="h
   <a href="../reference/index.html">Reference</a>
 </li>
       </ul><ul class="nav navbar-nav navbar-right"><li>
-  <a href="https://github.com/yuw444/LANTERN" class="external-link">
+  <a href="https://github.com/yuw444/lantern" class="external-link">
     <span class="fab fa-github fa-lg"></span>
 
   </a>
@@ -64,7 +67,7 @@ ancestry sample counts in ancestry_counts."><meta property="og:image" content="h
   <div class="col-md-9 contents">
     <div class="page-header">
     <h1>Per-gene ancestry weights for the Cauchy combination (Step 3 helper)</h1>
-    <small class="dont-index">Source: <a href="https://github.com/yuw444/LANTERN/blob/main/R/ancestry_smmat.R" class="external-link"><code>R/ancestry_smmat.R</code></a></small>
+    <small class="dont-index">Source: <a href="https://github.com/yuw444/lantern/blob/main/R/ancestry_smmat.R" class="external-link"><code>R/ancestry_smmat.R</code></a></small>
     <div class="hidden name"><code>dot-compute_gene_weights.Rd</code></div>
     </div>
 
@@ -102,7 +105,7 @@ returned by <code><a href="ancestry_split.html">ancestry_split</a></code>.</p></
 
 <dt id="arg-gene-group-file">gene_group_file<a class="anchor" aria-label="anchor" href="#arg-gene-group-file"></a></dt>
 <dd><p>Path to the gene_group file (no header; columns
-gene, chr, pos, ref, alt, weight) — the same file passed to
+gene, chr, pos, ref, alt, weight) – the same file passed to
 <code><a href="https://rdrr.io/pkg/GMMAT/man/SMMAT.html" class="external-link">GMMAT::SMMAT()</a></code>.</p></dd>
 
 

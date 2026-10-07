@@ -7,7 +7,7 @@ mixed hom-alts which each contribute one allele to each parent pool).
 Ambiguous heterozygotes in each mixed pair are then split by the
 conditional pairwise ratio \(p_i / (p_i + p_j)\).
 When no unambiguous alt alleles exist for a pair (singleton edge case),
-the split defaults to 0.5 / 0.5."><meta property="og:image" content="https://yuw444.github.io/LANTERN/logo.png"><!-- mathjax --><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js" integrity="sha256-nvJJv9wWKEm88qvoQl9ekL2J+k/RWIsaSScxxlsrv8k=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/config/TeX-AMS-MML_HTMLorMML.js" integrity="sha256-84DKXVJXs0/F8OTMzX4UR909+jtl4G7SPypPavF+GfA=" crossorigin="anonymous"></script><!--[if lt IE 9]>
+the split defaults to 0.5 / 0.5."><meta property="og:image" content="https://yuw444.github.io/lantern/logo.png"><!-- mathjax --><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js" integrity="sha256-nvJJv9wWKEm88qvoQl9ekL2J+k/RWIsaSScxxlsrv8k=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/config/TeX-AMS-MML_HTMLorMML.js" integrity="sha256-84DKXVJXs0/F8OTMzX4UR909+jtl4G7SPypPavF+GfA=" crossorigin="anonymous"></script><!--[if lt IE 9]>
 <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
 <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
 <![endif]--></head><body data-spy="scroll" data-target="#toc">
@@ -25,12 +25,15 @@ the split defaults to 0.5 / 0.5."><meta property="og:image" content="https://yuw
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">lantern</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.1</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.99.0</span>
       </span>
     </div>
 
     <div id="navbar" class="navbar-collapse collapse">
-      <ul class="nav navbar-nav"><li class="dropdown">
+      <ul class="nav navbar-nav"><li>
+  <a href="../articles/lantern.html">Get started</a>
+</li>
+<li class="dropdown">
   <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
     Articles
 
@@ -52,7 +55,7 @@ the split defaults to 0.5 / 0.5."><meta property="og:image" content="https://yuw
   <a href="../reference/index.html">Reference</a>
 </li>
       </ul><ul class="nav navbar-nav navbar-right"><li>
-  <a href="https://github.com/yuw444/LANTERN" class="external-link">
+  <a href="https://github.com/yuw444/lantern" class="external-link">
     <span class="fab fa-github fa-lg"></span>
 
   </a>
@@ -67,7 +70,7 @@ the split defaults to 0.5 / 0.5."><meta property="og:image" content="https://yuw
   <div class="col-md-9 contents">
     <div class="page-header">
     <h1>Split unphased genotype matrix by ancestry for K populations</h1>
-    <small class="dont-index">Source: <a href="https://github.com/yuw444/LANTERN/blob/main/R/ancestry_split.R" class="external-link"><code>R/ancestry_split.R</code></a></small>
+    <small class="dont-index">Source: <a href="https://github.com/yuw444/lantern/blob/main/R/ancestry_split.R" class="external-link"><code>R/ancestry_split.R</code></a></small>
     <div class="hidden name"><code>split_diploid_multi.Rd</code></div>
     </div>
 
@@ -132,17 +135,20 @@ Example for 3 populations:
 
 
 <dt id="arg-gla">gla<a class="anchor" aria-label="anchor" href="#arg-gla"></a></dt>
-<dd><p>Optional 2 x K numeric matrix (rows "p"/"q", columns matching
-<code>names(pure_codes)</code>) of per-arm global local ancestry proportions,
-as produced by <code><a href="ancestry_split.html">ancestry_split</a></code> internally. When <code>NULL</code>
-(default), GLA shrinkage is disabled and behavior matches the original
-p[k] estimator exactly, including its 0.5/0.5 singleton fallback.</p></dd>
+<dd><p>Optional shrinkage target: numeric matrix with one row per
+target group and columns matching <code>names(pure_codes)</code>. Each
+ambiguous pair (a, b) is shrunk toward \(t_a / (t_a + t_b)\) by the
+pair's ambiguous share \(w\) of the evidence.
+<code><a href="ancestry_split.html">ancestry_split</a></code> uses a single row of 1/K (i.e. 1/2 for
+every pair). When <code>NULL</code> (default), no shrinkage: the raw p[k]
+ratio is used, with a 0.5/0.5 fallback only when a pair has no
+unambiguous evidence.</p></dd>
 
 
 <dt id="arg-arm-id">arm_id<a class="anchor" aria-label="anchor" href="#arg-arm-id"></a></dt>
 <dd><p>Optional integer vector (length = <code>nrow(gt_genotype)</code>)
-giving each variant's row index into <code>gla</code> (0-based). Required
-together with <code>gla</code>.</p></dd>
+giving each variant's row index into <code>gla</code> (0-based; all zeros for
+a one-row target). Required together with <code>gla</code>.</p></dd>
 
 </dl></div>
     <div id="value">
