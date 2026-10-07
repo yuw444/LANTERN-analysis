@@ -186,7 +186,7 @@ It follows that $\sum_{k=1}^{K} p_k = 1$.
 
 **Shrinkage toward 1/2 (general $K$).** The formula above generalises **per pair**, not per population: each mixed pair $(i,j)$ gets its own ambiguous-fraction weight, and is shrunk toward an even split within the pair.
 
-$$T = D + \sum_{i'<j'} N_{i'j'}^{(1)}, \qquad w_{ij} = \frac{N_{ij}^{(1)}}{T}, \qquad \frac{p_i}{p_i+p_j} \leftarrow (1-w_{ij})\frac{p_i}{p_i+p_j} + \frac{w_{ij}}{2}$$
+$$T = D + \sum_{i' \lt j'} N_{i'j'}^{(1)}, \qquad w_{ij} = \frac{N_{ij}^{(1)}}{T}, \qquad \frac{p_i}{p_i+p_j} \leftarrow (1-w_{ij})\frac{p_i}{p_i+p_j} + \frac{w_{ij}}{2}$$
 
 using $D$ from the denominator formula above and the same $p_i$ from the population-proportion formula (the full-variant estimate, not a pair-restricted recount) — so the raw ratio is defined even when pair $(i,j)$ itself has no unambiguous hom-alt carriers, as long as $i$ and $j$ each have unambiguous evidence elsewhere in the variant; if $p_i+p_j=0$ too, the pair's split is $1/2$. $T$ (this variant's total allele-weighted confidence) is shared across *every* pair, not recomputed per pair: it sums $D$ (which already counts hom-alt carriers, pure or mixed, 2x) plus *all* pairs' ambiguous-het counts, not just $(i,j)$'s. $w_{ij}=0$ recovers the raw pairwise ratio; $w_{ij}=1$ (this variant's only alt-carrying evidence, of any pair or population, is pair $(i,j)$'s own ambiguous hets — the singleton case above) gives exactly $1/2 : 1/2$.
 
