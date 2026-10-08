@@ -136,8 +136,10 @@ if (!"id" %in% colnames(df_pheno)) {
 }
 
 name_res <- colnames(df_pheno)[2]
-name_covs <- colnames(df_pheno)[3:ncol(df_pheno)]
-formula_to_fit <- as.formula(paste0(name_res, " ~ ", paste(name_covs, collapse = " + ")))
+# columns 3+ are covariates; none -> intercept-only model (y ~ 1)
+name_covs <- colnames(df_pheno)[-(1:2)]
+formula_to_fit <- as.formula(paste0(name_res, " ~ ",
+                                    if (length(name_covs)) paste(name_covs, collapse = " + ") else "1"))
 
 family_to_use <- switch(
   opt$response_type,

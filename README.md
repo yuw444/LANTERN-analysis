@@ -288,6 +288,44 @@ Cauchy combination are computed automatically inside Step 2.
   for producing one from a phased VCF + reference panel.
 
 No installation of `./src` itself is needed — just run the scripts with `Rscript`.
+From a clone of this repo, use the project environment instead, which has
+the right R and compiler (`pixi run install-lantern` installs the package
+from `lantern/`; then prefix every command below with `pixi run`, e.g.
+`pixi run Rscript src/step1_vcf_split_by_ancestry.R ...`).
+
+#### Quick start (toy data shipped with the package)
+
+The package's simulated example (60 samples, 8 genes on chr19,
+`lantern/inst/extdata/`) runs all three steps in about a minute. The toy
+samples are unrelated, so an identity kinship matrix is used:
+
+```bash
+EXT=lantern/inst/extdata
+mkdir -p out
+Rscript -e 'p <- read.delim("lantern/inst/extdata/toy_pheno.tsv")
+            k <- diag(nrow(p)); dimnames(k) <- list(p$id, p$id)
+            saveRDS(k, "out/kinship.rds")'
+
+# Step 0: observed (unsplit) genotypes
+Rscript src/step0_observed_association.R --vcf_path $EXT/toy.vcf.gz --chr_id chr19 \
+  --out_path out/step0 --data_file $EXT/toy_pheno.tsv --gene_group_file $EXT/toy_genes.tsv \
+  --kinship_rds out/kinship.rds --out_file out/step0/observed.tsv
+
+# Step 1: split by local ancestry (dosage mode; use --mode haplotype for the phased split)
+Rscript src/step1_vcf_split_by_ancestry.R --vcf_path $EXT/toy.vcf.gz --msp_path $EXT/toy.msp.tsv \
+  --out_path out/step1 --chr_id chr19 --mode dosage
+
+# Step 2: ancestry-stratified SMMAT + Cauchy combination
+Rscript src/step2_association_detection.R --split_meta out/step1/split_meta_chrchr19.rds \
+  --data_file $EXT/toy_pheno.tsv --gene_group_file $EXT/toy_genes.tsv \
+  --kinship_rds out/kinship.rds --out_file out/step2/results.tsv
+```
+
+`out/step2/results.tsv` has one row per gene (`gene`, `p_AFR`, `w_AFR`,
+`p_EUR`, `w_EUR`, `p_cauchy`); the toy data's planted signal is `GENE2`
+(`p_AFR` ≈ 1e-8). The Step 1 metadata file is named after `--chr_id`
+exactly as given (`split_meta_chrchr19.rds` for `--chr_id chr19`,
+`split_meta_chr19.rds` for `--chr_id 19`).
 
 #### Step 0 — plain association test on observed (unsplit) genotypes
 
@@ -322,7 +360,7 @@ ancestry-stratified Step 1/Step 2 results.
 | `--gene_group_file` | yes | Gene-group file passed straight to `GMMAT::SMMAT()` — same format as Step 2's. |
 | `--kinship_rds` | yes | Kinship matrix RDS — same format as Step 2's. |
 | `--response_type` | no (default `continuous`) | `continuous` (`gaussian`), `binary` (`binomial`), or `count` (`poisson`). |
-| `--out_file` | yes | Output TSV path — see Output below. |
+| `--out_file` | yes | Output TSV path (its directory is created if missing) — see Output below. |
 | `--ncores` | no | Cores for `GMMAT::SMMAT()`. Defaults to `$SLURM_CPUS_PER_TASK` when set, else `1`. |
 
 **Output**: `out/OBSERVED.gds` plus two files derived from `--out_file`:
@@ -350,7 +388,7 @@ Rscript src/step1_vcf_split_by_ancestry.R \
 | `--msp_path` | yes | RFMix `.msp.tsv` (plain text or gzipped). May also contain other chromosomes' tracts; only `--chr_id`'s are used. |
 | `--out_path` | yes | Output directory, created if missing. |
 | `--chr_id` | yes | Chromosome to process, e.g. `22` or `chr22` — must identify the same chromosome in both `--vcf_path` and `--msp_path` (a `chr` prefix mismatch between the two is handled automatically). |
-| `--mode` | no (default `dosage`) | `dosage` = proportional p1/p2 split (unphased-friendly) or `haplotype` = deterministic per-haplotype split (needs a truly phased VCF). See `vignette("split-intuition")` for the difference. |
+| `--mode` | no (default `dosage`) | `dosage` = proportional p1/p2 split (unphased-friendly); ambiguous mixed-ancestry heterozygotes are shrunk toward 1/2 as described in Section 3 ("Shrinkage toward 1/2") — always on, there is no switch. `haplotype` = deterministic per-haplotype split (needs a truly phased VCF; no shrinkage). See `vignette("split-intuition")` for the difference. |
 
 **Multi-chromosome input**: `--vcf_path`/`--msp_path` don't need to be
 pre-split per chromosome — `--chr_id` selects one chromosome out of a
@@ -366,7 +404,7 @@ rather than combining chromosomes into a single call.
 | File | Contents |
 |------|----------|
 | `<POP>.gds` (one per population named in the MSP header, e.g. `AFR.gds`, `EUR.gds`) | Ancestry-specific dosage GDS, ready for `GMMAT::SMMAT()` (`is.dosage = TRUE`) |
-| `split_meta_chr<chr_id>.rds` | `list(gds_paths, variant_info, ancestry_counts, sample_ids, mode, shrink_target, lantern_version, chr_id)` — bundles the GDS paths above plus per-variant ancestry counts. This whole file is Step 2's `--split_meta` input. |
+| `split_meta_chr<chr_id>.rds` | `list(gds_paths, variant_info, ancestry_counts, sample_ids, mode, shrink_target, lantern_version, chr_id)` — bundles the GDS paths above plus per-variant ancestry counts, and records how the split was made (`shrink_target` is `"1/2"` in dosage mode, `NA` in haplotype mode; `lantern_version` is the installed package version). This whole file is Step 2's `--split_meta` input. |
 
 #### Step 2 — ancestry-stratified association testing
 
@@ -388,14 +426,21 @@ Rscript src/step2_association_detection.R \
 | `--gene_group_file` | yes | Gene-group file passed straight to `GMMAT::SMMAT()` — see format below. |
 | `--kinship_rds` | yes | Kinship matrix RDS — see format below. |
 | `--response_type` | no (default `continuous`) | `continuous` (`gaussian`), `binary` (`binomial`), or `count` (`poisson`). |
-| `--out_file` | yes | Output TSV path — see Output below. |
+| `--out_file` | yes | Output TSV path (its directory is created if missing) — see Output below. |
 | `--ncores` | no | Cores for `GMMAT::SMMAT()`. Defaults to `$SLURM_CPUS_PER_TASK` when set (i.e. automatically picks up `--cpus-per-task` in a SLURM job), else `1`. Pass explicitly to override. |
+
+Run Step 2 once per Step 1 output: to compare the two split modes, run
+Step 1 twice (`--mode dosage` and `--mode haplotype`, into different
+`--out_path`s) and point Step 2's `--split_meta` at each.
 
 **Input file formats**:
 
 * **Phenotype** (`--data_file`, header row required): column 1 must be
   `id`, column 2 is the response, remaining columns are covariates (all
   used — the formula is built as `<col2> ~ <col3> + <col4> + ...`).
+  Covariates are optional: a file with only `id` and the response fits
+  an intercept-only null model (`<col2> ~ 1`). Samples are matched by `id`
+  to the genotype and kinship sample IDs.
   ```
   id	response	age	sex	PC1	PC2
   sample_001	1	63	M	-0.012	0.034
