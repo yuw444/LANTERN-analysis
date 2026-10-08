@@ -118,6 +118,7 @@ result <- ancestry_smmat(
   ncores          = ncores
 )
 
+dir.create(dirname(opt$out_file), recursive = TRUE, showWarnings = FALSE)
 fwrite(result$results, opt$out_file, sep = "\t")
 message(
   "Wrote: ", opt$out_file,

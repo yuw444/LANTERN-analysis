@@ -207,6 +207,7 @@ results <- data.frame(
   stringsAsFactors = FALSE
 )
 
+dir.create(dirname(opt$out_file), recursive = TRUE, showWarnings = FALSE)
 fwrite(results, opt$out_file, sep = "\t")
 message("Wrote: ", opt$out_file, " (per-gene p_OBSERVED table, tab-separated)")
 
